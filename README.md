@@ -25,6 +25,7 @@ Schema-agnostic: use your preferred validation library (Pydantic, msgspec, datac
 - [Merge](#merge)
 - [Processors](#processors)
 - [Schema Placeholders](#schema-placeholders)
+- [Migration from pydantic-settings](#migration-from-pydantic-settings)
 - [Development](#development)
 - [License](#license)
 
@@ -353,6 +354,145 @@ Schema placeholders have the lowest priority. Override them in config files or e
 [database]
 password = "${vault:secret/data/staging/db#password}"
 ```
+
+## Migration from pydantic-settings
+
+### Basic Settings
+
+**Before (pydantic-settings):**
+```python
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+class AppConfig(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="APP_")
+
+    debug: bool = False
+    port: int = 8080
+
+config = AppConfig()
+```
+
+**After (justconf):**
+```python
+from pydantic import BaseModel
+from justconf import merge, env_loader
+
+class AppConfig(BaseModel):
+    debug: bool = False
+    port: int = 8080
+
+config = AppConfig(**merge(env_loader(prefix="APP")))
+```
+
+### Nested Settings
+
+**Before (pydantic-settings):**
+```python
+from pydantic import BaseModel
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+class DatabaseConfig(BaseModel):
+    host: str = "localhost"
+    port: int = 5432
+
+class AppConfig(BaseSettings):
+    model_config = SettingsConfigDict(env_nested_delimiter="__")
+
+    database: DatabaseConfig = DatabaseConfig()
+
+# Requires: DATABASE__HOST=prod-db DATABASE__PORT=5433
+config = AppConfig()
+```
+
+**After (justconf):**
+```python
+from pydantic import BaseModel
+from justconf import merge, env_loader
+
+class DatabaseConfig(BaseModel):
+    host: str = "localhost"
+    port: int = 5432
+
+class AppConfig(BaseModel):
+    database: DatabaseConfig = DatabaseConfig()
+
+# Same env vars work: DATABASE__HOST=prod-db DATABASE__PORT=5433
+config = AppConfig(**merge(env_loader()))
+```
+
+### With Vault Secrets
+
+**Before (pydantic-settings-vault):**
+```python
+from pydantic import Field
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
+from pydantic_vault import VaultSettingsSource
+
+class AppConfig(BaseSettings):
+    db_password: str = Field(
+        json_schema_extra={
+            "vault_secret_path": "secret/data/app",
+            "vault_secret_key": "db_password",
+        },
+    )
+    api_key: str = Field(
+        json_schema_extra={
+            "vault_secret_path": "secret/data/app",
+            "vault_secret_key": "api_key",
+        },
+    )
+
+    model_config = {"vault_url": "http://vault:8200"}
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        return (
+            init_settings,
+            env_settings,
+            VaultSettingsSource(settings_cls),
+            file_secret_settings,
+        )
+
+config = AppConfig()  # auth from VAULT_TOKEN env
+```
+
+**After (justconf):**
+```python
+from typing import Annotated
+from pydantic import BaseModel
+from justconf import merge, process, env_loader
+from justconf.processor import VaultProcessor, vault_auth_from_env
+from justconf.schema import Placeholder, extract_placeholders
+
+class AppConfig(BaseModel):
+    db_password: Annotated[str, Placeholder("${vault:secret/data/app#db_password}")]
+    api_key: Annotated[str, Placeholder("${vault:secret/data/app#api_key}")]
+
+config = merge(extract_placeholders(AppConfig), env_loader())
+
+vault = VaultProcessor(
+    url="http://vault:8200",
+    auth=vault_auth_from_env(),  # all detected methods as fallback chain
+)
+config = AppConfig(**process(config, [vault]))
+```
+
+### Key Differences
+
+| pydantic-settings                | justconf                                    |
+|----------------------------------|---------------------------------------------|
+| `BaseSettings` class inheritance | Plain `BaseModel` + loaders                 |
+| `env_prefix` in model config     | `prefix` parameter in `env_loader()`        |
+| `env_nested_delimiter="__"`      | `__` is the delimiter by default            |
+| Field-level vault config         | Placeholders in schema or any config source |
+| Implicit env loading             | Explicit `merge()` of sources               |
 
 ## Development
 

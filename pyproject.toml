@@ -1,18 +1,37 @@
 [build-system]
 build-backend = "hatchling.build"
-requires = [ "hatchling" ]
+requires = [ "hatch-vcs", "hatchling" ]
 
 [project]
 name = "justconf"
-version = "0.1.0"
 description = "Minimal schema-agnostic configuration loader library"
+readme = "README.md"
+keywords = [ "config", "configuration", "dotenv", "environment", "secrets", "settings", "toml", "vault" ]
+license = "MIT"
 authors = [ { name = "Aleksey Petrunnik", email = "petrunnik.a@gmail.com" } ]
 requires-python = ">=3.11"
+classifiers = [
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Typing :: Typed",
+]
+dynamic = [ "version" ]
 dependencies = [  ]
 
 optional-dependencies.dotenv = [
   "python-dotenv>=1",
 ]
+
+urls.Homepage = "https://github.com/aleksey925/justconf"
+urls.Issues = "https://github.com/aleksey925/justconf/issues"
+urls.Repository = "https://github.com/aleksey925/justconf"
 
 [dependency-groups]
 dev = [
@@ -22,6 +41,10 @@ dev = [
   "pytest-cov",
   "ruff==0.14.13",
 ]
+
+[tool.hatch.version]
+source = "vcs"
+tag-pattern = "^v(?P<version>.*)$"
 
 [tool.hatch.build.targets.wheel]
 packages = [ "src/justconf" ]

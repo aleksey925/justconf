@@ -1,4 +1,5 @@
 import json
+import ssl
 from http import HTTPStatus
 from unittest.mock import MagicMock, patch
 from urllib.error import HTTPError
@@ -14,6 +15,7 @@ from justconf.processor import (
     UserpassAuth,
     VaultProcessor,
 )
+from justconf.processor.vault import _create_ssl_context
 
 
 class TestTokenAuth:
@@ -371,6 +373,105 @@ class TestVaultProcessor:
 
         # assert (only 1 auth call, not 3)
         assert auth_call_count == 1
+
+    def test_verify_false__disables_ssl_verification(self):
+        # arrange
+        processor = VaultProcessor(
+            url='https://vault:8200',
+            auth=TokenAuth(token='test'),
+            verify=False,
+        )
+
+        # assert
+        assert processor._ssl_context is not None
+        assert processor._ssl_context.verify_mode == ssl.CERT_NONE
+        assert processor._ssl_context.check_hostname is False
+
+    def test_verify_custom_ca__uses_ca_bundle(self):
+        # arrange
+        mock_context = MagicMock(spec=ssl.SSLContext)
+
+        # act
+        with patch('ssl.create_default_context', return_value=mock_context) as mock_create:
+            processor = VaultProcessor(
+                url='https://vault:8200',
+                auth=TokenAuth(token='test'),
+                verify='/path/to/ca.crt',
+            )
+
+            # assert
+            mock_create.assert_called_once_with(cafile='/path/to/ca.crt')
+            assert processor._ssl_context is mock_context
+
+    def test_verify_nonexistent_ca__raises_error(self):
+        # act & assert
+        with pytest.raises(FileNotFoundError, match='CA bundle file not found'):
+            VaultProcessor(
+                url='https://vault:8200',
+                auth=TokenAuth(token='test'),
+                verify='/nonexistent/ca.crt',
+            )
+
+    def test_ssl_context_passed_to_urlopen(self):
+        # arrange
+        processor = VaultProcessor(
+            url='https://vault:8200',
+            auth=TokenAuth(token='test'),
+            verify=False,
+        )
+        mock_response = {'data': {'data': {'key': 'value'}}}
+
+        def side_effect(*args, **kwargs):
+            mock = MagicMock()
+            url = args[0].full_url if hasattr(args[0], 'full_url') else str(args[0])
+            if 'lookup-self' in url:
+                mock.__enter__.return_value.read.return_value = json.dumps({'data': {'ttl': 3600}}).encode()
+            else:
+                mock.__enter__.return_value.read.return_value = json.dumps(mock_response).encode()
+            return mock
+
+        # act
+        with patch('urllib.request.urlopen', side_effect=side_effect) as mock_urlopen:
+            processor.resolve('secret/test', 'key')
+
+            # assert
+            for call in mock_urlopen.call_args_list:
+                assert call.kwargs.get('context') is processor._ssl_context
+
+
+class TestCreateSslContext:
+    def test_verify_true__returns_none(self):
+        # act
+        result = _create_ssl_context(True)
+
+        # assert
+        assert result is None
+
+    def test_verify_false__returns_context_with_disabled_verification(self):
+        # act
+        result = _create_ssl_context(False)
+
+        # assert
+        assert isinstance(result, ssl.SSLContext)
+        assert result.verify_mode == ssl.CERT_NONE
+        assert result.check_hostname is False
+
+    def test_verify_path__returns_context_with_custom_ca(self):
+        # arrange
+        mock_context = MagicMock(spec=ssl.SSLContext)
+
+        # act
+        with patch('ssl.create_default_context', return_value=mock_context) as mock_create:
+            result = _create_ssl_context('/path/to/ca.crt')
+
+        # assert
+        mock_create.assert_called_once_with(cafile='/path/to/ca.crt')
+        assert result is mock_context
+
+    def test_verify_nonexistent_path__raises_file_not_found(self):
+        # act & assert
+        with pytest.raises(FileNotFoundError, match='CA bundle file not found'):
+            _create_ssl_context('/nonexistent/ca.crt')
 
 
 # fixtures and helpers

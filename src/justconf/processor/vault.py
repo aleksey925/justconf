@@ -1,4 +1,5 @@
 import json
+import ssl
 import time
 import urllib.parse
 import urllib.request
@@ -20,16 +21,49 @@ DEFAULT_TIMEOUT = 30
 TOKEN_REFRESH_BUFFER_SECONDS = 30
 
 
+def _create_ssl_context(verify: bool | str) -> ssl.SSLContext | None:
+    """Create SSL context based on verify parameter.
+
+    Args:
+        verify: True for default CA verification, False to disable,
+                or path to CA bundle file.
+
+    Returns:
+        SSLContext or None (for default behavior when verify=True).
+
+    Raises:
+        FileNotFoundError: If verify is a path and the file does not exist.
+    """
+    if verify is True:
+        return None
+    if verify is False:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        return ctx
+    # verify is a path to CA bundle
+    try:
+        return ssl.create_default_context(cafile=verify)
+    except FileNotFoundError:
+        raise FileNotFoundError(f'CA bundle file not found: {verify}') from None
+
+
 class VaultAuth(ABC):
     """Base class for Vault authentication methods."""
 
     @abstractmethod
-    def authenticate(self, vault_url: str, timeout: int = DEFAULT_TIMEOUT) -> tuple[str, int]:
+    def authenticate(
+        self,
+        vault_url: str,
+        timeout: int = DEFAULT_TIMEOUT,
+        ssl_context: ssl.SSLContext | None = None,
+    ) -> tuple[str, int]:
         """Authenticate with Vault and return token with TTL.
 
         Args:
             vault_url: Base URL of the Vault server.
             timeout: Request timeout in seconds.
+            ssl_context: SSL context for HTTPS connections.
 
         Returns:
             Tuple of (token, ttl_seconds).
@@ -46,7 +80,12 @@ class TokenAuth(VaultAuth):
     def __init__(self, token: str):
         self.token = token
 
-    def authenticate(self, vault_url: str, timeout: int = DEFAULT_TIMEOUT) -> tuple[str, int]:
+    def authenticate(
+        self,
+        vault_url: str,
+        timeout: int = DEFAULT_TIMEOUT,
+        ssl_context: ssl.SSLContext | None = None,
+    ) -> tuple[str, int]:
         if not self.token:
             raise AuthenticationError('Token is empty')
 
@@ -56,7 +95,7 @@ class TokenAuth(VaultAuth):
                 f'{vault_url}/v1/auth/token/lookup-self',
                 headers={'X-Vault-Token': self.token},
             )
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with urllib.request.urlopen(req, timeout=timeout, context=ssl_context) as resp:
                 data = json.loads(resp.read())
                 ttl = data.get('data', {}).get('ttl', 3600)
                 return self.token, ttl
@@ -79,7 +118,12 @@ class AppRoleAuth(VaultAuth):
         self.secret_id = secret_id
         self.mount_path = mount_path
 
-    def authenticate(self, vault_url: str, timeout: int = DEFAULT_TIMEOUT) -> tuple[str, int]:
+    def authenticate(
+        self,
+        vault_url: str,
+        timeout: int = DEFAULT_TIMEOUT,
+        ssl_context: ssl.SSLContext | None = None,
+    ) -> tuple[str, int]:
         if not self.role_id or not self.secret_id:
             raise AuthenticationError('role_id and secret_id are required')
 
@@ -97,7 +141,7 @@ class AppRoleAuth(VaultAuth):
                 headers={'Content-Type': 'application/json'},
                 method='POST',
             )
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with urllib.request.urlopen(req, timeout=timeout, context=ssl_context) as resp:
                 data = json.loads(resp.read())
                 auth = data.get('auth', {})
                 return auth['client_token'], auth.get('lease_duration', 3600)
@@ -120,7 +164,12 @@ class JwtAuth(VaultAuth):
         self.jwt = jwt
         self.mount_path = mount_path
 
-    def authenticate(self, vault_url: str, timeout: int = DEFAULT_TIMEOUT) -> tuple[str, int]:
+    def authenticate(
+        self,
+        vault_url: str,
+        timeout: int = DEFAULT_TIMEOUT,
+        ssl_context: ssl.SSLContext | None = None,
+    ) -> tuple[str, int]:
         if not self.jwt:
             raise AuthenticationError('JWT token is empty')
 
@@ -138,7 +187,7 @@ class JwtAuth(VaultAuth):
                 headers={'Content-Type': 'application/json'},
                 method='POST',
             )
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with urllib.request.urlopen(req, timeout=timeout, context=ssl_context) as resp:
                 data = json.loads(resp.read())
                 auth = data.get('auth', {})
                 return auth['client_token'], auth.get('lease_duration', 3600)
@@ -173,7 +222,12 @@ class KubernetesAuth(VaultAuth):
         except FileNotFoundError as e:
             raise AuthenticationError(f'Kubernetes SA token not found at {self.jwt_path}') from e
 
-    def authenticate(self, vault_url: str, timeout: int = DEFAULT_TIMEOUT) -> tuple[str, int]:
+    def authenticate(
+        self,
+        vault_url: str,
+        timeout: int = DEFAULT_TIMEOUT,
+        ssl_context: ssl.SSLContext | None = None,
+    ) -> tuple[str, int]:
         payload = json.dumps(
             {
                 'role': self.role,
@@ -188,7 +242,7 @@ class KubernetesAuth(VaultAuth):
                 headers={'Content-Type': 'application/json'},
                 method='POST',
             )
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with urllib.request.urlopen(req, timeout=timeout, context=ssl_context) as resp:
                 data = json.loads(resp.read())
                 auth = data.get('auth', {})
                 return auth['client_token'], auth.get('lease_duration', 3600)
@@ -211,7 +265,12 @@ class UserpassAuth(VaultAuth):
         self.password = password
         self.mount_path = mount_path
 
-    def authenticate(self, vault_url: str, timeout: int = DEFAULT_TIMEOUT) -> tuple[str, int]:
+    def authenticate(
+        self,
+        vault_url: str,
+        timeout: int = DEFAULT_TIMEOUT,
+        ssl_context: ssl.SSLContext | None = None,
+    ) -> tuple[str, int]:
         if not self.username or not self.password:
             raise AuthenticationError('Username and password are required')
 
@@ -224,7 +283,7 @@ class UserpassAuth(VaultAuth):
                 headers={'Content-Type': 'application/json'},
                 method='POST',
             )
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with urllib.request.urlopen(req, timeout=timeout, context=ssl_context) as resp:
                 data = json.loads(resp.read())
                 auth = data.get('auth', {})
                 return auth['client_token'], auth.get('lease_duration', 3600)
@@ -245,6 +304,7 @@ class VaultProcessor(Processor):
         auth: VaultAuth | list[VaultAuth],
         mount_path: str = 'secret',
         timeout: int = 30,
+        verify: bool | str = True,
     ):
         """Initialize VaultProcessor.
 
@@ -253,6 +313,8 @@ class VaultProcessor(Processor):
             auth: Authentication method or list of methods (fallback chain).
             mount_path: KV v2 mount path.
             timeout: Request timeout in seconds.
+            verify: SSL certificate verification. True (default) uses system CA,
+                    False disables verification, or path to CA bundle file.
 
         Raises:
             ValueError: If URL is invalid.
@@ -267,6 +329,7 @@ class VaultProcessor(Processor):
         self.auth_methods = auth if isinstance(auth, list) else [auth]
         self.mount_path = mount_path
         self.timeout = timeout
+        self._ssl_context = _create_ssl_context(verify)
 
         # token cache
         self._token: str | None = None
@@ -281,7 +344,7 @@ class VaultProcessor(Processor):
 
         for auth in self.auth_methods:
             try:
-                return auth.authenticate(self.url, self.timeout)
+                return auth.authenticate(self.url, self.timeout, self._ssl_context)
             except AuthenticationError as e:
                 errors.append(e)
 
@@ -306,7 +369,7 @@ class VaultProcessor(Processor):
             headers={'X-Vault-Token': token},
         )
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            with urllib.request.urlopen(req, timeout=self.timeout, context=self._ssl_context) as resp:
                 return cast(dict[str, Any], json.loads(resp.read()))
         except HTTPError as e:
             if e.code == HTTPStatus.NOT_FOUND:

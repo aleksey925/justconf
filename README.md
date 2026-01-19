@@ -164,11 +164,29 @@ processor = VaultProcessor(
     auth=TokenAuth(token="hvs.xxx"),
     mount_path="secret",  # KV v2 mount path (default: "secret")
     timeout=30,           # request timeout in seconds
+    verify=True,          # SSL verification (default: True)
 )
 
 config = {"api_key": "${vault:secret/api#key}"}
 result = process(config, [processor])
 # {"api_key": "actual_key"}
+```
+
+### SSL Verification
+
+The `verify` parameter controls SSL certificate verification:
+
+- `verify=True` (default) — use system CA certificates
+- `verify=False` — disable SSL verification (not recommended for production)
+- `verify="/path/to/ca-bundle.crt"` — use custom CA bundle
+
+```python
+# For internal Vault with self-signed certificate
+processor = VaultProcessor(
+    url="https://vault.internal:8200",
+    auth=TokenAuth(token="hvs.xxx"),
+    verify="/etc/ssl/certs/internal-ca.crt",
+)
 ```
 
 ### Authentication Methods

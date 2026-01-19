@@ -1,0 +1,70 @@
+repos:
+  - repo: builtin
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: detect-private-key
+        exclude: ^(dev/vault/)
+      - id: check-yaml
+
+  - repo: https://github.com/google/yamlfmt
+    rev: v0.21.0
+    hooks:
+      - id: yamlfmt
+        args: [-formatter, retain_line_breaks_single=true]
+
+  - repo: local
+    hooks:
+      - id: name-tests
+        name: check test naming
+        entry: |
+          bash -c '
+            pattern="${1:-prefix}"
+            shift
+            for f in "$@"; do
+              b=$(basename "$f")
+              [[ "$b" == conftest.py ]] || [[ "$b" == __init__.py ]] && continue
+              if [[ "$pattern" == "prefix" ]]; then
+                [[ "$b" =~ ^test_.*\.py$ ]] || { echo "ERROR: $f should be test_*.py"; exit 1; }
+              else
+                [[ "$b" =~ .*_test\.py$ ]] || { echo "ERROR: $f should be *_test.py"; exit 1; }
+              fi
+            done
+          ' --
+        language: system
+        files: ^tests/.*\.py$
+        args: [prefix]
+
+      - id: ruff-format
+        name: ruff-format
+        language: system
+        entry: ruff format
+        types: [python]
+
+      - id: ruff
+        name: ruff
+        language: system
+        entry: ruff check --fix
+        types: [python]
+
+      - id: lock-file-check
+        name: lock file check
+        language: system
+        entry: uv lock --check
+        pass_filenames: false
+        files: ^(pyproject\.toml|.*\.lock)$
+
+      - id: pyproject-fmt
+        name: pyproject-fmt
+        language: system
+        entry: uvx pyproject-fmt --no-generate-python-version-classifiers
+        files: ^pyproject\.toml$
+
+      - id: mypy
+        name: mypy
+        language: system
+        require_serial: true
+        entry: mypy
+        pass_filenames: false
+        types: [python]
+        args: [src]

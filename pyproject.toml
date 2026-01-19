@@ -1,0 +1,79 @@
+[build-system]
+build-backend = "hatchling.build"
+requires = [ "hatchling" ]
+
+[project]
+name = "justconf"
+version = "0.1.0"
+description = "Minimal schema-agnostic configuration loader library"
+authors = [ { name = "Aleksey Petrunnik", email = "petrunnik.a@gmail.com" } ]
+requires-python = ">=3.11"
+dependencies = [  ]
+
+optional-dependencies.dotenv = [
+  "python-dotenv>=1",
+]
+
+[dependency-groups]
+dev = [
+  "mypy==1.19.1",
+  "prek==0.2.30",
+  "pytest>=7",
+  "pytest-cov",
+  "ruff==0.14.13",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = [ "src/justconf" ]
+
+[tool.uv]
+default-groups = [ "dev" ]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+format.quote-style = "single"
+lint.select = [
+  "A",
+  "C90",
+  "E",
+  "F",
+  "I",
+  "N",
+  "PLC0415",
+  "RUF",
+  "S",
+  "T20",
+  "UP",
+  "W",
+]
+lint.ignore = [
+  "A003",
+  "S101",
+  "S104",
+]
+lint.per-file-ignores."src/justconf/loader.py" = [
+  "PLC0415", # import inside function for optional dependency
+]
+lint.per-file-ignores."src/justconf/processor/vault.py" = [
+  "S310", # URL open for vault API calls is intentional
+]
+lint.per-file-ignores."tests/*" = [
+  "S105", # hardcoded passwords in tests are fine
+  "S106", # hardcoded passwords in tests are fine
+  "S310", # suspicious url
+]
+
+[tool.pytest.ini_options]
+testpaths = [ "tests" ]
+pythonpath = [ "src" ]
+addopts = "-m 'not integration'"
+markers = [
+  "integration: tests requiring real Vault server (deselected by default)",
+]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+show_error_codes = true
+no_implicit_optional = false

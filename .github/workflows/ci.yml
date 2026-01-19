@@ -1,0 +1,44 @@
+name: ci
+
+on:
+  pull_request:
+    branches:
+      - "*"
+  push:
+    branches:
+      - "master"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install tools
+        uses: jdx/mise-action@v3
+
+      - name: Install dependencies
+        run: make deps
+
+      - name: Run lint
+        run: make lint
+
+  test:
+    strategy:
+      matrix:
+        py_version: ["3.11", "3.12", "3.13", "3.14"]
+        os: [ubuntu-latest]
+    runs-on: "${{ matrix.os }}"
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install tools
+        uses: jdx/mise-action@v3
+        with:
+          install_args: python@${{ matrix.py_version }} uv
+
+      - name: Install dependencies
+        run: make deps
+
+      - name: Run tests
+        run: make test

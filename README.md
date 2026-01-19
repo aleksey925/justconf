@@ -1,4 +1,5 @@
-# justconf
+justconf
+========
 
 Minimal schema-agnostic configuration loader for Python.
 
@@ -127,10 +128,169 @@ config = merge(
 
 **Priority:** later arguments have higher priority.
 
+## Secret Resolution
+
+The `process` function resolves placeholders in your config, fetching secrets from external sources like HashiCorp Vault.
+
+### Placeholder Syntax
+
+```
+${processor:path#key|modifier:value}
+```
+
+- `processor` — name of the processor (e.g., `vault`)
+- `path` — path to the secret
+- `key` — (optional) specific key within the secret
+- `modifiers` — (optional) post-processing modifiers
+
+### Basic Usage
+
+```python
+from justconf import process
+from justconf.processors import VaultProcessor, TokenAuth
+
+processor = VaultProcessor(
+    url="http://vault:8200",
+    auth=TokenAuth(token="hvs.xxx"),
+)
+
+config = {
+    "db_password": "${vault:secret/db#password}",
+    "api_key": "${vault:secret/api#key}",
+}
+
+result = process(config, [processor])
+# {"db_password": "actual_password", "api_key": "actual_key"}
+```
+
+### Embedded Placeholders
+
+Placeholders can be embedded within strings:
+
+```python
+config = {
+    "dsn": "postgres://user:${vault:secret/db#password}@localhost/db",
+}
+```
+
+### File Modifier
+
+Write secrets to files instead of keeping them in memory. Useful for certificates and keys:
+
+```python
+config = {
+    "tls_cert": "${vault:secret/tls#cert|file:/etc/ssl/cert.pem}",
+    "tls_key": "${vault:secret/tls#key|file:/etc/ssl/key.pem|encoding:utf-8}",
+}
+
+result = process(config, [processor])
+# {"tls_cert": "/etc/ssl/cert.pem", "tls_key": "/etc/ssl/key.pem"}
+# Files are created with the secret content
+```
+
+If the value is a dict or list, it's serialized as JSON.
+
+### VaultProcessor
+
+Fetches secrets from HashiCorp Vault (KV v2).
+
+```python
+from justconf.processors import VaultProcessor
+
+processor = VaultProcessor(
+    url="http://vault:8200",
+    auth=auth_method,           # see authentication methods below
+    mount_path="secret",        # KV v2 mount path (default: "secret")
+    timeout=30,                 # request timeout in seconds
+)
+```
+
+### Authentication Methods
+
+#### TokenAuth
+
+Direct token authentication:
+
+```python
+from justconf.processors import TokenAuth
+
+auth = TokenAuth(token="hvs.xxx")
+```
+
+#### AppRoleAuth
+
+For automated workflows:
+
+```python
+from justconf.processors import AppRoleAuth
+
+auth = AppRoleAuth(
+    role_id="xxx",
+    secret_id="yyy",
+    mount_path="approle",  # default: "approle"
+)
+```
+
+#### JwtAuth
+
+For GitLab CI/CD and similar:
+
+```python
+from justconf.processors import JwtAuth
+
+auth = JwtAuth(
+    role="myproject",
+    jwt=os.environ["CI_JOB_JWT"],
+    mount_path="jwt",  # default: "jwt"
+)
+```
+
+#### KubernetesAuth
+
+For Kubernetes pods:
+
+```python
+from justconf.processors import KubernetesAuth
+
+auth = KubernetesAuth(
+    role="myapp",
+    # jwt is read from /var/run/secrets/kubernetes.io/serviceaccount/token by default
+)
+```
+
+#### UserpassAuth
+
+Username/password authentication:
+
+```python
+from justconf.processors import UserpassAuth
+
+auth = UserpassAuth(
+    username="admin",
+    password="secret",
+    mount_path="userpass",  # default: "userpass"
+)
+```
+
+### Auth Fallback Chain
+
+Pass a list of auth methods to try them in order until one succeeds:
+
+```python
+processor = VaultProcessor(
+    url="http://vault:8200",
+    auth=[
+        TokenAuth(token=os.environ.get("VAULT_TOKEN", "")),
+        KubernetesAuth(role="myapp"),
+        AppRoleAuth(role_id="xxx", secret_id="yyy"),
+    ],
+)
+```
+
 ## Exceptions
 
 ```python
-from justconf import LoaderError, TomlLoadError
+from justconf import LoaderError, TomlLoadError, ProcessorError, SecretNotFoundError
 
 try:
     config = toml_loader("config.toml")
@@ -142,6 +302,18 @@ except TomlLoadError as e:
     pass
 except LoaderError:
     # Base class for all loader errors
+    pass
+
+try:
+    result = process(config, [processor])
+except SecretNotFoundError as e:
+    # Secret or key not found in Vault
+    pass
+except AuthenticationError as e:
+    # Authentication failed
+    pass
+except ProcessorError:
+    # Base class for all processor errors
     pass
 ```
 
@@ -182,10 +354,26 @@ Raises: `FileNotFoundError`, `TomlLoadError`
 
 Deep merge dictionaries. Later arguments override earlier ones.
 
+### Process
+
+#### `process(config, processors) -> dict[str, Any]`
+
+Resolve placeholders in config using processors.
+
+- `config`: Configuration dictionary
+- `processors`: List of processors
+
+Raises: `PlaceholderError`, `SecretNotFoundError`, `AuthenticationError`
+
 ### Exceptions
 
 - `LoaderError` — base exception for all loader errors
 - `TomlLoadError` — TOML parsing error
+- `ProcessorError` — base exception for all processor errors
+- `PlaceholderError` — unknown processor in placeholder
+- `SecretNotFoundError` — secret or key not found
+- `AuthenticationError` — authentication failed
+- `NoValidAuthError` — all auth methods in fallback chain failed
 
 ## License
 

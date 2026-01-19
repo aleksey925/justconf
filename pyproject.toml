@@ -55,6 +55,13 @@ lint.ignore = [
 lint.per-file-ignores."src/justconf/loaders.py" = [
   "PLC0415", # import inside function for optional dependency
 ]
+lint.per-file-ignores."src/justconf/processors/vault.py" = [
+  "S310", # URL open for vault API calls is intentional
+]
+lint.per-file-ignores."tests/*" = [
+  "S105", # hardcoded passwords in tests are fine
+  "S106", # hardcoded passwords in tests are fine
+]
 
 [tool.pytest.ini_options]
 testpaths = [ "tests" ]

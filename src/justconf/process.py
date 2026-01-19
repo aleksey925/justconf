@@ -5,8 +5,8 @@ from contextlib import ExitStack
 from dataclasses import dataclass
 from typing import Any, cast
 
-from justconf.exceptions import PlaceholderError
-from justconf.processors.base import Processor
+from justconf.exception import PlaceholderError
+from justconf.processor.base import Processor
 
 # Pattern: ${processor:path#key|modifier:value|modifier:value}
 PLACEHOLDER_PATTERN = re.compile(
@@ -136,7 +136,7 @@ def process(
         New config dictionary with all placeholders resolved.
 
     Example:
-        >>> from justconf.processors import VaultProcessor, TokenAuth
+        >>> from justconf.processor import VaultProcessor, TokenAuth
         >>> processor = VaultProcessor(
         ...     url="http://vault:8200",
         ...     auth=TokenAuth(token="hvs.xxx"),

@@ -147,7 +147,7 @@ ${processor:path#key|modifier:value}
 
 ```python
 from justconf import process
-from justconf.processors import VaultProcessor, TokenAuth
+from justconf.processor import VaultProcessor, TokenAuth
 
 processor = VaultProcessor(
     url="http://vault:8200",
@@ -195,7 +195,7 @@ If the value is a dict or list, it's serialized as JSON.
 Fetches secrets from HashiCorp Vault (KV v2).
 
 ```python
-from justconf.processors import VaultProcessor
+from justconf.processor import VaultProcessor
 
 processor = VaultProcessor(
     url="http://vault:8200",
@@ -212,7 +212,7 @@ processor = VaultProcessor(
 Direct token authentication:
 
 ```python
-from justconf.processors import TokenAuth
+from justconf.processor import TokenAuth
 
 auth = TokenAuth(token="hvs.xxx")
 ```
@@ -222,7 +222,7 @@ auth = TokenAuth(token="hvs.xxx")
 For automated workflows:
 
 ```python
-from justconf.processors import AppRoleAuth
+from justconf.processor import AppRoleAuth
 
 auth = AppRoleAuth(
     role_id="xxx",
@@ -236,7 +236,7 @@ auth = AppRoleAuth(
 For GitLab CI/CD and similar:
 
 ```python
-from justconf.processors import JwtAuth
+from justconf.processor import JwtAuth
 
 auth = JwtAuth(
     role="myproject",
@@ -250,7 +250,7 @@ auth = JwtAuth(
 For Kubernetes pods:
 
 ```python
-from justconf.processors import KubernetesAuth
+from justconf.processor import KubernetesAuth
 
 auth = KubernetesAuth(
     role="myapp",
@@ -263,7 +263,7 @@ auth = KubernetesAuth(
 Username/password authentication:
 
 ```python
-from justconf.processors import UserpassAuth
+from justconf.processor import UserpassAuth
 
 auth = UserpassAuth(
     username="admin",

@@ -52,10 +52,10 @@ lint.ignore = [
   "S101",
   "S104",
 ]
-lint.per-file-ignores."src/justconf/loaders.py" = [
+lint.per-file-ignores."src/justconf/loader.py" = [
   "PLC0415", # import inside function for optional dependency
 ]
-lint.per-file-ignores."src/justconf/processors/vault.py" = [
+lint.per-file-ignores."src/justconf/processor/vault.py" = [
   "S310", # URL open for vault API calls is intentional
 ]
 lint.per-file-ignores."tests/*" = [

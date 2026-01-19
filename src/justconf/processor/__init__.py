@@ -1,5 +1,5 @@
-from justconf.processors.base import Processor
-from justconf.processors.vault import (
+from justconf.processor.base import Processor
+from justconf.processor.vault import (
     AppRoleAuth,
     JwtAuth,
     KubernetesAuth,

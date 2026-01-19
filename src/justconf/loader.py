@@ -2,7 +2,7 @@ import os
 import tomllib
 from typing import Any
 
-from justconf.exceptions import TomlLoadError
+from justconf.exception import TomlLoadError
 
 
 def _strip_prefix(key: str, prefix: str, case_sensitive: bool) -> str | None:

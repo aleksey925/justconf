@@ -1,4 +1,4 @@
-from justconf.exceptions import (
+from justconf.exception import (
     AuthenticationError,
     LoaderError,
     NoValidAuthError,
@@ -7,7 +7,7 @@ from justconf.exceptions import (
     SecretNotFoundError,
     TomlLoadError,
 )
-from justconf.loaders import dotenv_loader, env_loader, toml_loader
+from justconf.loader import dotenv_loader, env_loader, toml_loader
 from justconf.merge import merge
 from justconf.process import process
 

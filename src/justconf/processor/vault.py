@@ -9,12 +9,12 @@ from http import HTTPStatus
 from typing import Any, cast
 from urllib.error import HTTPError
 
-from justconf.exceptions import (
+from justconf.exception import (
     AuthenticationError,
     NoValidAuthError,
     SecretNotFoundError,
 )
-from justconf.processors.base import Processor
+from justconf.processor.base import Processor
 
 DEFAULT_TIMEOUT = 30
 TOKEN_REFRESH_BUFFER_SECONDS = 30

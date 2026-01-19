@@ -6,7 +6,7 @@ from urllib.error import HTTPError
 import pytest
 
 from justconf import AuthenticationError, NoValidAuthError, SecretNotFoundError
-from justconf.processors import (
+from justconf.processor import (
     AppRoleAuth,
     JwtAuth,
     KubernetesAuth,

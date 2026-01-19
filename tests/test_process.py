@@ -3,7 +3,7 @@ from contextlib import contextmanager
 import pytest
 
 from justconf import PlaceholderError, process
-from justconf.processors.base import Processor
+from justconf.processor.base import Processor
 
 
 class TestProcess:

@@ -96,6 +96,27 @@ class TestAppRoleAuth:
             call_args = mock_urlopen.call_args[0][0]
             assert '/auth/custom-approle/login' in call_args.full_url
 
+    def test_authenticate__http_error__raises_auth_error(self):
+        # arrange
+        auth = AppRoleAuth(role_id='role', secret_id='secret')
+
+        # act & assert
+        with patch('urllib.request.urlopen') as mock_urlopen:
+            mock_urlopen.side_effect = create_http_error(HTTPStatus.FORBIDDEN)
+            with pytest.raises(AuthenticationError, match='AppRole authentication failed'):
+                auth.authenticate('http://vault:8200')
+
+    def test_authenticate__invalid_response__raises_auth_error(self):
+        # arrange
+        auth = AppRoleAuth(role_id='role', secret_id='secret')
+        mock_response = {'auth': {}}  # missing client_token
+
+        # act & assert
+        with patch('urllib.request.urlopen') as mock_urlopen:
+            mock_urlopen.return_value.__enter__.return_value.read.return_value = json.dumps(mock_response).encode()
+            with pytest.raises(AuthenticationError, match='Invalid response'):
+                auth.authenticate('http://vault:8200')
+
 
 class TestJwtAuth:
     def test_authenticate__valid_jwt__returns_token(self):
@@ -124,6 +145,41 @@ class TestJwtAuth:
         # act & assert
         with pytest.raises(AuthenticationError, match='JWT token is empty'):
             auth.authenticate('http://vault:8200')
+
+    def test_authenticate__custom_mount_path__uses_path(self):
+        # arrange
+        auth = JwtAuth(role='myproject', jwt='eyJ...', mount_path='oidc')
+        mock_response = {'auth': {'client_token': 'token', 'lease_duration': 3600}}
+
+        # act
+        with patch('urllib.request.urlopen') as mock_urlopen:
+            mock_urlopen.return_value.__enter__.return_value.read.return_value = json.dumps(mock_response).encode()
+            auth.authenticate('http://vault:8200')
+
+            # assert
+            call_args = mock_urlopen.call_args[0][0]
+            assert '/auth/oidc/login' in call_args.full_url
+
+    def test_authenticate__http_error__raises_auth_error(self):
+        # arrange
+        auth = JwtAuth(role='myproject', jwt='invalid')
+
+        # act & assert
+        with patch('urllib.request.urlopen') as mock_urlopen:
+            mock_urlopen.side_effect = create_http_error(HTTPStatus.FORBIDDEN)
+            with pytest.raises(AuthenticationError, match='JWT authentication failed'):
+                auth.authenticate('http://vault:8200')
+
+    def test_authenticate__invalid_response__raises_auth_error(self):
+        # arrange
+        auth = JwtAuth(role='myproject', jwt='valid')
+        mock_response = {'auth': {}}  # missing client_token
+
+        # act & assert
+        with patch('urllib.request.urlopen') as mock_urlopen:
+            mock_urlopen.return_value.__enter__.return_value.read.return_value = json.dumps(mock_response).encode()
+            with pytest.raises(AuthenticationError, match='Invalid response'):
+                auth.authenticate('http://vault:8200')
 
 
 class TestKubernetesAuth:
@@ -171,6 +227,48 @@ class TestKubernetesAuth:
         with pytest.raises(AuthenticationError, match='Kubernetes SA token not found'):
             _ = auth.jwt
 
+    def test_authenticate__custom_mount_path__uses_path(self):
+        # arrange
+        auth = KubernetesAuth(role='myapp', jwt='token', mount_path='k8s-cluster')
+        mock_response = {'auth': {'client_token': 'token', 'lease_duration': 3600}}
+
+        # act
+        with patch('urllib.request.urlopen') as mock_urlopen:
+            mock_urlopen.return_value.__enter__.return_value.read.return_value = json.dumps(mock_response).encode()
+            auth.authenticate('http://vault:8200')
+
+            # assert
+            call_args = mock_urlopen.call_args[0][0]
+            assert '/auth/k8s-cluster/login' in call_args.full_url
+
+    def test_authenticate__http_error__raises_auth_error(self):
+        # arrange
+        auth = KubernetesAuth(role='myapp', jwt='token')
+
+        # act & assert
+        with patch('urllib.request.urlopen') as mock_urlopen:
+            mock_urlopen.side_effect = create_http_error(HTTPStatus.FORBIDDEN)
+            with pytest.raises(AuthenticationError, match='Kubernetes authentication failed'):
+                auth.authenticate('http://vault:8200')
+
+    def test_authenticate__invalid_response__raises_auth_error(self):
+        # arrange
+        auth = KubernetesAuth(role='myapp', jwt='token')
+        mock_response = {'auth': {}}  # missing client_token
+
+        # act & assert
+        with patch('urllib.request.urlopen') as mock_urlopen:
+            mock_urlopen.return_value.__enter__.return_value.read.return_value = json.dumps(mock_response).encode()
+            with pytest.raises(AuthenticationError, match='Invalid response'):
+                auth.authenticate('http://vault:8200')
+
+    def test_jwt_property__with_jwt_param__returns_param(self):
+        # arrange
+        auth = KubernetesAuth(role='myapp', jwt='direct_token')
+
+        # act & assert
+        assert auth.jwt == 'direct_token'
+
 
 class TestUserpassAuth:
     def test_authenticate__valid_credentials__returns_token(self):
@@ -200,8 +298,108 @@ class TestUserpassAuth:
         with pytest.raises(AuthenticationError, match='Username and password are required'):
             auth.authenticate('http://vault:8200')
 
+    def test_authenticate__custom_mount_path__uses_path(self):
+        # arrange
+        auth = UserpassAuth(username='admin', password='secret', mount_path='ldap')
+        mock_response = {'auth': {'client_token': 'token', 'lease_duration': 3600}}
+
+        # act
+        with patch('urllib.request.urlopen') as mock_urlopen:
+            mock_urlopen.return_value.__enter__.return_value.read.return_value = json.dumps(mock_response).encode()
+            auth.authenticate('http://vault:8200')
+
+            # assert
+            call_args = mock_urlopen.call_args[0][0]
+            assert '/auth/ldap/login/admin' in call_args.full_url
+
+    def test_authenticate__http_error__raises_auth_error(self):
+        # arrange
+        auth = UserpassAuth(username='admin', password='wrong')
+
+        # act & assert
+        with patch('urllib.request.urlopen') as mock_urlopen:
+            mock_urlopen.side_effect = create_http_error(HTTPStatus.FORBIDDEN)
+            with pytest.raises(AuthenticationError, match='Userpass authentication failed'):
+                auth.authenticate('http://vault:8200')
+
+    def test_authenticate__invalid_response__raises_auth_error(self):
+        # arrange
+        auth = UserpassAuth(username='admin', password='secret')
+        mock_response = {'auth': {}}  # missing client_token
+
+        # act & assert
+        with patch('urllib.request.urlopen') as mock_urlopen:
+            mock_urlopen.return_value.__enter__.return_value.read.return_value = json.dumps(mock_response).encode()
+            with pytest.raises(AuthenticationError, match='Invalid response'):
+                auth.authenticate('http://vault:8200')
+
 
 class TestVaultProcessor:
+    def test_init__invalid_url_scheme__raises_error(self):
+        # act & assert
+        with pytest.raises(ValueError, match='Invalid Vault URL scheme'):
+            VaultProcessor(
+                url='ftp://vault:8200',
+                auth=TokenAuth(token='test'),
+            )
+
+    def test_init__missing_host__raises_error(self):
+        # act & assert
+        with pytest.raises(ValueError, match=r'Invalid Vault URL.*missing host'):
+            VaultProcessor(
+                url='http://',
+                auth=TokenAuth(token='test'),
+            )
+
+    def test_init__url_trailing_slash__stripped(self):
+        # act
+        processor = VaultProcessor(
+            url='http://vault:8200/',
+            auth=TokenAuth(token='test'),
+        )
+
+        # assert
+        assert processor.url == 'http://vault:8200'
+
+    def test_init__custom_mount_path__used_in_requests(self):
+        # arrange
+        processor = VaultProcessor(
+            url='http://vault:8200',
+            auth=TokenAuth(token='test_token'),
+            mount_path='kv',
+        )
+        mock_token_response = {'data': {'ttl': 3600}}
+        mock_secret_response = {'data': {'data': {'key': 'value'}}}
+
+        def side_effect(*args, **kwargs):
+            mock = MagicMock()
+            url = args[0].full_url if hasattr(args[0], 'full_url') else str(args[0])
+            if 'lookup-self' in url:
+                mock.__enter__.return_value.read.return_value = json.dumps(mock_token_response).encode()
+            else:
+                # verify custom mount path is used
+                assert '/v1/kv/data/' in url
+                mock.__enter__.return_value.read.return_value = json.dumps(mock_secret_response).encode()
+            return mock
+
+        # act
+        with patch('urllib.request.urlopen', side_effect=side_effect):
+            result = processor.resolve('secret/test', 'key')
+
+        # assert
+        assert result == 'value'
+
+    def test_init__custom_timeout__stored(self):
+        # act
+        processor = VaultProcessor(
+            url='http://vault:8200',
+            auth=TokenAuth(token='test'),
+            timeout=60,
+        )
+
+        # assert
+        assert processor.timeout == 60
+
     def test_resolve__simple_secret__returns_value(self):
         # arrange
         processor = create_processor_with_mock_auth()
@@ -437,6 +635,104 @@ class TestVaultProcessor:
             # assert
             for call in mock_urlopen.call_args_list:
                 assert call.kwargs.get('context') is processor._ssl_context
+
+    def test_resolve__token_expired_during_request__retries_with_new_token(self):
+        # arrange
+        processor = create_processor_with_mock_auth()
+        mock_token_response = {'data': {'ttl': 3600}}
+        mock_secret_response = {'data': {'data': {'key': 'value'}}}
+        request_count = 0
+
+        def side_effect(*args, **kwargs):
+            nonlocal request_count
+            request_count += 1
+            mock = MagicMock()
+            url = args[0].full_url if hasattr(args[0], 'full_url') else str(args[0])
+
+            if 'lookup-self' in url:
+                mock.__enter__.return_value.read.return_value = json.dumps(mock_token_response).encode()
+            elif '/data/' in url:
+                # first request fails with auth error, second succeeds
+                if request_count == 2:
+                    raise create_http_error(HTTPStatus.FORBIDDEN)
+                mock.__enter__.return_value.read.return_value = json.dumps(mock_secret_response).encode()
+            return mock
+
+        # act
+        with patch('urllib.request.urlopen', side_effect=side_effect):
+            result = processor.resolve('secret/test', 'key')
+
+        # assert
+        assert result == 'value'
+        # should have made: 1 token lookup, 1 failed secret request, 1 token re-auth, 1 successful secret request
+        assert request_count == 4
+
+    def test_resolve__multiple_auth_methods__tries_in_order(self):
+        # arrange
+        auth1 = AppRoleAuth(role_id='', secret_id='')  # will fail
+        auth2 = TokenAuth(token='')  # will fail
+        auth3 = TokenAuth(token='valid')  # will succeed
+
+        processor = VaultProcessor(
+            url='http://vault:8200',
+            auth=[auth1, auth2, auth3],
+        )
+
+        mock_token_response = {'data': {'ttl': 3600}}
+        mock_secret_response = {'data': {'data': {'key': 'value'}}}
+
+        def side_effect(*args, **kwargs):
+            mock = MagicMock()
+            url = args[0].full_url if hasattr(args[0], 'full_url') else str(args[0])
+            if 'lookup-self' in url:
+                mock.__enter__.return_value.read.return_value = json.dumps(mock_token_response).encode()
+            else:
+                mock.__enter__.return_value.read.return_value = json.dumps(mock_secret_response).encode()
+            return mock
+
+        # act
+        with patch('urllib.request.urlopen', side_effect=side_effect):
+            result = processor.resolve('secret/test', 'key')
+
+        # assert
+        assert result == 'value'
+
+    def test_caching__outside_context__does_not_cache(self):
+        # arrange
+        processor = create_processor_with_mock_auth()
+        mock_secret_response = {'data': {'data': {'password': 'secret'}}}
+        call_count = 0
+
+        def mock_urlopen_side_effect(*args, **kwargs):
+            nonlocal call_count
+            mock = MagicMock()
+            url = args[0].full_url if hasattr(args[0], 'full_url') else str(args[0])
+            if '/data/' in url:
+                call_count += 1
+            if 'lookup-self' in url:
+                mock.__enter__.return_value.read.return_value = json.dumps({'data': {'ttl': 3600}}).encode()
+            else:
+                mock.__enter__.return_value.read.return_value = json.dumps(mock_secret_response).encode()
+            return mock
+
+        # act (without caching context)
+        with patch('urllib.request.urlopen', side_effect=mock_urlopen_side_effect):
+            processor.resolve('secret/db', 'password')
+            processor.resolve('secret/db', 'password')
+            processor.resolve('secret/db', 'password')
+
+        # assert (each call fetches secret)
+        assert call_count == 3
+
+    def test_name_property__returns_vault(self):
+        # arrange
+        processor = VaultProcessor(
+            url='http://vault:8200',
+            auth=TokenAuth(token='test'),
+        )
+
+        # assert
+        assert processor.name == 'vault'
 
 
 class TestCreateSslContext:

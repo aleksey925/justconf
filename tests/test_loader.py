@@ -1,5 +1,10 @@
+import importlib
+import sys
+from unittest.mock import patch
+
 import pytest
 
+import justconf.loader
 from justconf import TomlLoadError, dotenv_loader, env_loader, toml_loader
 
 
@@ -110,6 +115,49 @@ class TestEnvLoader:
         # assert
         assert result == {'debug': 'true'}
 
+    def test_env_loader__case_sensitive_true_without_prefix__preserves_case(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('MyApp_Config', 'value')
+
+        # act
+        result = env_loader(case_sensitive=True)
+
+        # assert
+        assert result['MyApp_Config'] == 'value'
+
+    def test_env_loader__nested_keys_case_sensitive__preserves_nested_case(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('APP_Database__Host', 'localhost')
+        monkeypatch.setenv('APP_Database__Port', '5432')
+
+        # act
+        result = env_loader(prefix='APP', case_sensitive=True)
+
+        # assert
+        assert result == {'Database': {'Host': 'localhost', 'Port': '5432'}}
+
+    def test_env_loader__prefix_case_sensitive_true__filters_exact_match(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('APP_VALUE', 'correct')
+        monkeypatch.setenv('app_VALUE', 'ignored')
+
+        # act
+        result = env_loader(prefix='APP', case_sensitive=True)
+
+        # assert
+        assert result == {'VALUE': 'correct'}
+
+    def test_env_loader__deeply_nested_overwrites_existing_value(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('APP_DB', 'simple_value')
+        monkeypatch.setenv('APP_DB__HOST', 'localhost')
+
+        # act
+        result = env_loader(prefix='APP')
+
+        # assert (nested key overwrites scalar)
+        assert result == {'db': {'host': 'localhost'}}
+
 
 class TestDotenvLoader:
     def test_dotenv_loader__basic_file__loads_values(self, tmp_path):
@@ -204,6 +252,50 @@ class TestDotenvLoader:
 
         # assert
         assert result == {'foo': 'bar baz', 'bar': 'single'}
+
+    def test_dotenv_loader__python_dotenv_not_installed__raises_import_error(self, tmp_path):
+        # arrange
+        env_file = tmp_path / '.env'
+        env_file.write_text('FOO=bar\n')
+
+        # act & assert
+        with patch.dict(sys.modules, {'dotenv': None}):
+            importlib.reload(justconf.loader)
+
+            with pytest.raises(ImportError, match='python-dotenv is required'):
+                justconf.loader.dotenv_loader(str(env_file))
+
+            importlib.reload(justconf.loader)
+
+    def test_dotenv_loader__comments_and_empty_lines__handled(self, tmp_path):
+        # arrange
+        env_file = tmp_path / '.env'
+        env_file.write_text(
+            """
+# This is a comment
+FOO=bar
+
+# Another comment
+BAZ=qux
+"""
+        )
+
+        # act
+        result = dotenv_loader(str(env_file))
+
+        # assert
+        assert result == {'foo': 'bar', 'baz': 'qux'}
+
+    def test_dotenv_loader__nested_keys_case_sensitive__preserves_case(self, tmp_path):
+        # arrange
+        env_file = tmp_path / '.env'
+        env_file.write_text('Database__Host=localhost\nDatabase__Port=5432\n')
+
+        # act
+        result = dotenv_loader(str(env_file), case_sensitive=True)
+
+        # assert
+        assert result == {'Database': {'Host': 'localhost', 'Port': '5432'}}
 
 
 class TestTomlLoader:

@@ -220,6 +220,135 @@ class TestProcess:
         # assert
         assert result == {'count': 42, 'enabled': True, 'rate': 3.14, 'empty': None}
 
+    def test_process__file_modifier_with_list__writes_json(self, tmp_path):
+        # arrange
+        file_path = tmp_path / 'hosts.json'
+        config = {'hosts': f'${{mock:secret/hosts|file:{file_path}}}'}
+        processor = MockProcessor('mock', {'secret/hosts#None': ['host1', 'host2', 'host3']})
+
+        # act
+        result = process(config, [processor])
+
+        # assert
+        assert result == {'hosts': str(file_path)}
+        assert file_path.read_text() == '["host1", "host2", "host3"]'
+
+    def test_process__embedded_placeholder_with_modifiers__applies_modifiers(self, tmp_path):
+        # arrange
+        file_path = tmp_path / 'cert.pem'
+        config = {'url': f'https://example.com?cert=${{mock:secret/tls#cert|file:{file_path}}}'}
+        processor = MockProcessor('mock', {'secret/tls#cert': '-----BEGIN CERT-----'})
+
+        # act
+        result = process(config, [processor])
+
+        # assert
+        assert result == {'url': f'https://example.com?cert={file_path}'}
+        assert file_path.read_text() == '-----BEGIN CERT-----'
+
+    def test_process__unknown_processor_in_embedded__raises_error(self):
+        # arrange
+        config = {'url': 'prefix_${unknown:path#key}_suffix'}
+
+        # act & assert
+        with pytest.raises(PlaceholderError, match='Unknown processor: unknown'):
+            process(config, [])
+
+    def test_process__nested_list_in_dict__resolves_all(self):
+        # arrange
+        config = {
+            'servers': {
+                'hosts': ['${mock:host1#name}', '${mock:host2#name}'],
+                'primary': '${mock:primary#ip}',
+            }
+        }
+        processor = MockProcessor(
+            'mock',
+            {
+                'host1#name': 'server1.example.com',
+                'host2#name': 'server2.example.com',
+                'primary#ip': '10.0.0.1',
+            },
+        )
+
+        # act
+        result = process(config, [processor])
+
+        # assert
+        assert result == {
+            'servers': {
+                'hosts': ['server1.example.com', 'server2.example.com'],
+                'primary': '10.0.0.1',
+            }
+        }
+
+    def test_process__empty_config__returns_empty(self):
+        # act
+        result = process({}, [])
+
+        # assert
+        assert result == {}
+
+    def test_process__placeholder_with_special_characters_in_path__resolves(self):
+        # arrange
+        config = {'secret': '${mock:path/with-dashes/and_underscores#key}'}
+        processor = MockProcessor('mock', {'path/with-dashes/and_underscores#key': 'value'})
+
+        # act
+        result = process(config, [processor])
+
+        # assert
+        assert result == {'secret': 'value'}
+
+    def test_process__processor_resolve_returns_int__preserves_type(self):
+        # arrange
+        config = {'port': '${mock:config#port}'}
+        processor = MockProcessor('mock', {'config#port': 8080})
+
+        # act
+        result = process(config, [processor])
+
+        # assert
+        assert result == {'port': 8080}
+        assert isinstance(result['port'], int)
+
+    def test_process__processor_resolve_returns_bool__preserves_type(self):
+        # arrange
+        config = {'enabled': '${mock:config#debug}'}
+        processor = MockProcessor('mock', {'config#debug': True})
+
+        # act
+        result = process(config, [processor])
+
+        # assert
+        assert result == {'enabled': True}
+        assert isinstance(result['enabled'], bool)
+
+    def test_process__embedded_placeholder_converts_to_string(self):
+        # arrange
+        config = {'message': 'Port is ${mock:config#port}'}
+        processor = MockProcessor('mock', {'config#port': 8080})
+
+        # act
+        result = process(config, [processor])
+
+        # assert
+        assert result == {'message': 'Port is 8080'}
+        assert isinstance(result['message'], str)
+
+    def test_process__file_modifier_no_parent_dir__writes_to_current(self, tmp_path, monkeypatch):
+        # arrange
+        monkeypatch.chdir(tmp_path)
+        config = {'cert': '${mock:secret/tls#cert|file:secret.txt}'}
+        processor = MockProcessor('mock', {'secret/tls#cert': 'cert_content'})
+
+        # act
+        result = process(config, [processor])
+
+        # assert
+        assert result == {'cert': 'secret.txt'}
+        assert (tmp_path / 'secret.txt').read_text() == 'cert_content'
+
 
 # fixtures
 

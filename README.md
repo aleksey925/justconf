@@ -233,6 +233,27 @@ result = process(config, [processor])
 
 If the value is a dict or list, it's serialized as JSON.
 
+## Development
+
+### Debugging with a real Vault server
+
+You can use a real Vault server to debug this project. To make this process
+easier, this project includes a `docker-compose.yml` file that can run a
+ready-to-use Vault server.
+
+To run the server and set it up, run the following commands:
+
+```shell
+docker compose up
+make vault
+```
+
+After that, you will have a Vault server running at `http://localhost:8200`, where you can authorize in three ways:
+
+- using the root token (which is `token`)
+- using the JWT method (role=`jwt_role`, token=[link](./configs/vault/jwt_token.txt))
+- using the AppRole method (the values of role_id and secret_id can be found in the logs of the `make vault` command).
+
 ## License
 
 MIT

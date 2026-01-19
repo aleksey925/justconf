@@ -61,11 +61,16 @@ lint.per-file-ignores."src/justconf/processor/vault.py" = [
 lint.per-file-ignores."tests/*" = [
   "S105", # hardcoded passwords in tests are fine
   "S106", # hardcoded passwords in tests are fine
+  "S310", # suspicious url
 ]
 
 [tool.pytest.ini_options]
 testpaths = [ "tests" ]
 pythonpath = [ "src" ]
+addopts = "-m 'not integration'"
+markers = [
+  "integration: tests requiring real Vault server (deselected by default)",
+]
 
 [tool.mypy]
 python_version = "3.11"

@@ -15,3 +15,9 @@ test-all:
 
 lint:
 	@uv run prek run --all-files
+
+build:
+	uv build
+
+publish:
+	uv publish

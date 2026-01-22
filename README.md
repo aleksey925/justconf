@@ -66,13 +66,14 @@ from justconf.processor import VaultProcessor, TokenAuth
 # Load and merge config
 config = merge(
     toml_loader("config.toml"),
-    {"db_password": "${vault:secret/db#password}"},  # placeholder for secret
+    {"db_password": "${vault:db#password}"},  # placeholder for secret
 )
 
 # Resolve secrets from Vault
 processor = VaultProcessor(
     url="http://vault:8200",
     auth=TokenAuth(token="hvs.xxx"),
+    mount_path="secret",  # KV v2 secrets engine mount path
 )
 config = process(config, [processor])
 # {"db_password": "actual_password_from_vault", ...}
@@ -148,7 +149,7 @@ ${processor:path#key|modifier:value}
 Placeholders can be embedded within strings:
 
 ```python
-config = {"dsn": "postgres://user:${vault:secret/db#password}@localhost/db"}
+config = {"dsn": "postgres://user:${vault:db#password}@localhost/db"}
 ```
 
 ### VaultProcessor
@@ -162,17 +163,62 @@ from justconf.processor import VaultProcessor, TokenAuth
 processor = VaultProcessor(
     url="http://vault:8200",
     auth=TokenAuth(token="hvs.xxx"),
-    mount_path="secret",  # KV v2 mount path (default: "secret")
+    mount_path="secret",  # KV v2 secrets engine mount path (required)
     timeout=30,           # request timeout in seconds
     verify=True,          # SSL verification (default: True)
 )
 
-config = {"api_key": "${vault:secret/api#key}"}
+config = {"api_key": "${vault:myapp/api#key}"}
 result = process(config, [processor])
 # {"api_key": "actual_key"}
 ```
 
-### SSL Verification
+#### Understanding Mount Path
+
+The `mount_path` parameter specifies where the KV v2 secrets engine is mounted in Vault. This is a **required** parameter.
+
+**How to find your mount path:**
+
+- **Vault UI**: Go to Secrets → the engine name shown is your mount path
+- **Vault CLI**: Run `vault secrets list` to see all mounted engines
+
+**Path structure explained:**
+
+```
+Full Vault path:    secret/data/myapp/database
+                    ~~~~~~ ~~~~ ~~~~~~~~~~~~~~~
+                      │     │         │
+                      │     │         └── secret path (used in placeholder)
+                      │     └── KV v2 internal prefix (added automatically)
+                      └── mount_path (passed to VaultProcessor)
+
+Placeholder:        ${vault:myapp/database#password}
+                           ~~~~~~~~~~~~~~~
+                                  │
+                                  └── only the secret path, without mount_path
+```
+
+**Examples with different mount paths:**
+
+```python
+from justconf.processor import VaultProcessor, TokenAuth, KubernetesAuth
+
+# Default Vault dev server (mount path: "secret")
+processor = VaultProcessor(
+    url="http://localhost:8200",
+    auth=TokenAuth(token="root"),
+    mount_path="secret",
+)
+
+# Custom mount path for a team
+processor = VaultProcessor(
+    url="https://vault.company.com:8200",
+    auth=KubernetesAuth(role="myapp"),
+    mount_path="team-backend/kv",
+)
+```
+
+#### SSL Verification
 
 The `verify` parameter controls SSL certificate verification:
 
@@ -185,11 +231,12 @@ The `verify` parameter controls SSL certificate verification:
 processor = VaultProcessor(
     url="https://vault.internal:8200",
     auth=TokenAuth(token="hvs.xxx"),
+    mount_path="secret",
     verify="/etc/ssl/certs/internal-ca.crt",
 )
 ```
 
-### Authentication Methods
+#### Authentication Methods
 
 VaultProcessor supports multiple [Vault auth methods](https://developer.hashicorp.com/vault/docs/auth):
 
@@ -199,7 +246,7 @@ VaultProcessor supports multiple [Vault auth methods](https://developer.hashicor
 - **KubernetesAuth(role, jwt=None, jwt_path="...", mount_path="kubernetes")** — for [Kubernetes](https://developer.hashicorp.com/vault/docs/auth/kubernetes) pods; JWT is read from `/var/run/secrets/kubernetes.io/serviceaccount/token` by default
 - **UserpassAuth(username, password, mount_path="userpass")** — [username/password](https://developer.hashicorp.com/vault/docs/auth/userpass) authentication
 
-### Auth Fallback Chain
+#### Auth Fallback Chain
 
 Pass a list of auth methods to try them in order until one succeeds:
 
@@ -213,17 +260,18 @@ processor = VaultProcessor(
         KubernetesAuth(role="myapp"),
         AppRoleAuth(role_id="xxx", secret_id="yyy"),
     ],
+    mount_path="secret",
 )
 ```
 
-### File Modifier
+#### File Modifier
 
 Write secrets to files instead of keeping them in memory. Useful for certificates and keys:
 
 ```python
 config = {
-    "tls_cert": "${vault:secret/tls#cert|file:/etc/ssl/cert.pem}",
-    "tls_key": "${vault:secret/tls#key|file:/etc/ssl/key.pem|encoding:utf-8}",
+    "tls_cert": "${vault:tls#cert|file:/etc/ssl/cert.pem}",
+    "tls_key": "${vault:tls#key|file:/etc/ssl/key.pem|encoding:utf-8}",
 }
 
 result = process(config, [processor])

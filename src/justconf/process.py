@@ -140,8 +140,9 @@ def process(
         >>> processor = VaultProcessor(
         ...     url="http://vault:8200",
         ...     auth=TokenAuth(token="hvs.xxx"),
+        ...     mount_path="secret",
         ... )
-        >>> config = {"db_password": "${vault:secret/data/db#password}"}
+        >>> config = {"db_password": "${vault:db#password}"}
         >>> result = process(config, [processor])
         >>> result["db_password"]
         'actual_password_from_vault'

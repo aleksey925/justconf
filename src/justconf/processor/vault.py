@@ -302,7 +302,7 @@ class VaultProcessor(Processor):
         self,
         url: str,
         auth: VaultAuth | list[VaultAuth],
-        mount_path: str = 'secret',
+        mount_path: str,
         timeout: int = 30,
         verify: bool | str = True,
     ):
@@ -401,15 +401,14 @@ class VaultProcessor(Processor):
 
     def resolve(self, path: str, key: str | None = None) -> Any:
         """Resolve secret from Vault."""
+        path = path.strip('/')
         cache_key = f'{path}#{key}'
 
-        # check cache if active
         if self._secrets_cache is not None and cache_key in self._secrets_cache:
             return self._secrets_cache[cache_key]
 
         value = self._fetch_secret(path, key)
 
-        # store in cache if active
         if self._secrets_cache is not None:
             self._secrets_cache[cache_key] = value
 

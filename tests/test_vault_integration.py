@@ -57,6 +57,7 @@ class TestVaultIntegrationBasic:
         processor = VaultProcessor(
             url=VAULT_URL,
             auth=TokenAuth(token=VAULT_TOKEN),
+            mount_path='secret',
         )
 
         # act
@@ -70,6 +71,7 @@ class TestVaultIntegrationBasic:
         processor = VaultProcessor(
             url=VAULT_URL,
             auth=TokenAuth(token=VAULT_TOKEN),
+            mount_path='secret',
         )
 
         # act
@@ -87,6 +89,7 @@ class TestVaultIntegrationBasic:
         processor = VaultProcessor(
             url=VAULT_URL,
             auth=TokenAuth(token=VAULT_TOKEN),
+            mount_path='secret',
         )
 
         # act & assert
@@ -98,6 +101,7 @@ class TestVaultIntegrationBasic:
         processor = VaultProcessor(
             url=VAULT_URL,
             auth=TokenAuth(token=VAULT_TOKEN),
+            mount_path='secret',
         )
 
         # act & assert
@@ -121,6 +125,7 @@ class TestVaultIntegrationProcess:
         processor = VaultProcessor(
             url=VAULT_URL,
             auth=TokenAuth(token=VAULT_TOKEN),
+            mount_path='secret',
         )
 
         # act
@@ -144,6 +149,7 @@ class TestVaultIntegrationProcess:
         processor = VaultProcessor(
             url=VAULT_URL,
             auth=TokenAuth(token=VAULT_TOKEN),
+            mount_path='secret',
         )
 
         # act
@@ -163,6 +169,7 @@ class TestVaultIntegrationProcess:
         processor = VaultProcessor(
             url=VAULT_URL,
             auth=TokenAuth(token=VAULT_TOKEN),
+            mount_path='secret',
         )
 
         # act
@@ -183,6 +190,7 @@ class TestVaultIntegrationProcess:
         processor = VaultProcessor(
             url=VAULT_URL,
             auth=TokenAuth(token=VAULT_TOKEN),
+            mount_path='secret',
         )
 
         # act
@@ -220,6 +228,7 @@ pool_size = 10
         processor = VaultProcessor(
             url=VAULT_URL,
             auth=TokenAuth(token=VAULT_TOKEN),
+            mount_path='secret',
         )
 
         # act
@@ -243,6 +252,7 @@ class TestVaultIntegrationAppRole:
         processor = VaultProcessor(
             url=VAULT_URL,
             auth=AppRoleAuth(role_id=role_id, secret_id=secret_id),
+            mount_path='secret',
         )
 
         # act
@@ -260,6 +270,7 @@ class TestVaultIntegrationAppRole:
                 TokenAuth(token='invalid_token'),
                 AppRoleAuth(role_id=role_id, secret_id=secret_id),
             ],
+            mount_path='secret',
         )
 
         # act
@@ -278,6 +289,7 @@ class TestVaultIntegrationUserpass:
         processor = VaultProcessor(
             url=VAULT_URL,
             auth=UserpassAuth(username=username, password=password),
+            mount_path='secret',
         )
 
         # act
@@ -292,6 +304,7 @@ class TestVaultIntegrationUserpass:
         processor = VaultProcessor(
             url=VAULT_URL,
             auth=UserpassAuth(username=username, password='wrong_password'),
+            mount_path='secret',
         )
 
         # act & assert
@@ -308,6 +321,7 @@ class TestVaultIntegrationUserpass:
                 UserpassAuth(username='wronguser', password='wrongpass'),
                 UserpassAuth(username=username, password=password),
             ],
+            mount_path='secret',
         )
 
         # act

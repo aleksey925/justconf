@@ -35,8 +35,10 @@ urls.Repository = "https://github.com/aleksey925/justconf"
 
 [dependency-groups]
 dev = [
+  "msgspec>=0.18",
   "mypy==1.19.1",
   "prek==0.2.30",
+  "pydantic>=2",
   "pytest>=7",
   "pytest-cov",
   "ruff==0.14.13",

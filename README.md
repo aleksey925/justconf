@@ -17,6 +17,7 @@ Schema-agnostic: use your preferred validation library (Pydantic, msgspec, datac
 - [Loaders](#loaders)
 - [Merge](#merge)
 - [Processors](#processors)
+- [Schema Placeholders](#schema-placeholders)
 - [License](#license)
 
 ## Installation
@@ -319,6 +320,76 @@ result = process(config, [processor])
 ```
 
 If the value is a dict or list, it's serialized as JSON.
+
+## Schema Placeholders
+
+Define default placeholder values directly in your schema using `Placeholder` annotation.
+This keeps secret paths co-located with your configuration schema instead of scattered
+across config files.
+
+### Basic Usage
+
+```python
+from typing import Annotated
+from pydantic import BaseModel
+from justconf import merge, process, toml_loader
+from justconf.schema import Placeholder, extract_placeholders
+
+class DatabaseConfig(BaseModel):
+    host: str = "localhost"  # static default
+    port: int = 5432
+    password: Annotated[str, Placeholder("${vault:db/creds#password}")]
+
+class AppConfig(BaseModel):
+    database: DatabaseConfig
+    api_key: Annotated[str, Placeholder("${vault:api#key}")]
+
+# Extract placeholders from schema
+schema_defaults = extract_placeholders(AppConfig)
+# {'database': {'password': '${vault:db/creds#password}'}, 'api_key': '${vault:api#key}'}
+
+# Merge with priority: schema defaults < config file < environment
+config = merge(
+    schema_defaults,
+    toml_loader("config.toml"),
+)
+
+# Resolve placeholders (vault_processor created as shown in Processors section)
+config = process(config, [vault_processor])
+
+# Validate
+app_config = AppConfig(**config)
+```
+
+### Schema-Agnostic
+
+Works with any class that has type hints:
+
+```python
+from dataclasses import dataclass
+from typing import Annotated
+from justconf.schema import Placeholder, extract_placeholders
+
+@dataclass
+class ServiceConfig:
+    api_key: Annotated[str, Placeholder("${vault:service#key}")]
+
+# Plain classes work too
+class PlainConfig:
+    token: Annotated[str, Placeholder("${vault:auth#token}")]
+
+extract_placeholders(ServiceConfig)  # {'api_key': '${vault:service#key}'}
+```
+
+### Override Schema Placeholders
+
+Schema placeholders have the lowest priority. Override them in config files or environment:
+
+```toml
+# config.toml - overrides schema default
+[database]
+password = "${vault:staging/db#password}"
+```
 
 ## Development
 

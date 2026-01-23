@@ -264,6 +264,45 @@ processor = VaultProcessor(
 )
 ```
 
+#### Authentication from Environment Variables
+
+Use `vault_auth_from_env()` to automatically detect credentials from environment variables:
+
+```python
+from justconf.processor import VaultProcessor, vault_auth_from_env
+
+# Detect all available auth methods (sorted by priority)
+auths = vault_auth_from_env()
+
+# Use first available (like pydantic-settings-vault)
+if auths:
+    processor = VaultProcessor(
+        url="http://vault:8200",
+        auth=auths[0],
+        mount_path="secret",
+    )
+
+# Or use fallback chain
+processor = VaultProcessor(
+    url="http://vault:8200",
+    auth=auths,  # VaultProcessor accepts list
+    mount_path="secret",
+)
+
+# Explicit method selection
+auths = vault_auth_from_env(method='approle')
+```
+
+**Supported environment variables (in order of priority):**
+
+| Auth Method    | Required Variables                   | Mount Path Override                                 |
+|----------------|--------------------------------------|-----------------------------------------------------|
+| AppRoleAuth    | `VAULT_ROLE_ID` + `VAULT_SECRET_ID`  | `VAULT_APPROLE_MOUNT_PATH`    (default: approle)    |
+| KubernetesAuth | `VAULT_KUBERNETES_ROLE`              | `VAULT_KUBERNETES_MOUNT_PATH` (default: kubernetes) |
+| TokenAuth      | `VAULT_TOKEN`                        | —                                                   |
+| JwtAuth        | `VAULT_JWT_ROLE` + `VAULT_JWT_TOKEN` | `VAULT_JWT_MOUNT_PATH`        (default: jwt)        |
+| UserpassAuth   | `VAULT_USERNAME` + `VAULT_PASSWORD`  | `VAULT_USERPASS_MOUNT_PATH`   (default: userpass)   |
+
 #### File Modifier
 
 Write secrets to files instead of keeping them in memory. Useful for certificates and keys:

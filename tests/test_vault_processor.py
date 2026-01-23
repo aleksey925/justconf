@@ -14,8 +14,16 @@ from justconf.processor import (
     TokenAuth,
     UserpassAuth,
     VaultProcessor,
+    vault_auth_from_env,
 )
-from justconf.processor.vault import _create_ssl_context
+from justconf.processor.vault import (
+    _create_ssl_context,
+    _detect_approle_auth,
+    _detect_jwt_auth,
+    _detect_kubernetes_auth,
+    _detect_token_auth,
+    _detect_userpass_auth,
+)
 
 
 class TestTokenAuth:
@@ -833,6 +841,310 @@ class TestCreateSslContext:
         # act & assert
         with pytest.raises(FileNotFoundError, match='CA bundle file not found'):
             _create_ssl_context('/nonexistent/ca.crt')
+
+
+class TestDetectTokenAuth:
+    def test_token_present__returns_token_auth(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('VAULT_TOKEN', 'hvs.test_token')
+
+        # act
+        result = _detect_token_auth()
+
+        # assert
+        assert isinstance(result, TokenAuth)
+        assert result.token == 'hvs.test_token'
+
+    def test_token_absent__returns_none(self, monkeypatch):
+        # arrange
+        monkeypatch.delenv('VAULT_TOKEN', raising=False)
+
+        # act
+        result = _detect_token_auth()
+
+        # assert
+        assert result is None
+
+
+class TestDetectAppRoleAuth:
+    def test_both_credentials_present__returns_approle_auth(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('VAULT_ROLE_ID', 'role123')
+        monkeypatch.setenv('VAULT_SECRET_ID', 'secret456')
+
+        # act
+        result = _detect_approle_auth()
+
+        # assert
+        assert isinstance(result, AppRoleAuth)
+        assert result.role_id == 'role123'
+        assert result.secret_id == 'secret456'
+        assert result.mount_path == 'approle'
+
+    def test_custom_mount_path__uses_env_value(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('VAULT_ROLE_ID', 'role123')
+        monkeypatch.setenv('VAULT_SECRET_ID', 'secret456')
+        monkeypatch.setenv('VAULT_APPROLE_MOUNT_PATH', 'custom-approle')
+
+        # act
+        result = _detect_approle_auth()
+
+        # assert
+        assert result.mount_path == 'custom-approle'
+
+    def test_only_role_id__returns_none(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('VAULT_ROLE_ID', 'role123')
+        monkeypatch.delenv('VAULT_SECRET_ID', raising=False)
+
+        # act
+        result = _detect_approle_auth()
+
+        # assert
+        assert result is None
+
+    def test_only_secret_id__returns_none(self, monkeypatch):
+        # arrange
+        monkeypatch.delenv('VAULT_ROLE_ID', raising=False)
+        monkeypatch.setenv('VAULT_SECRET_ID', 'secret456')
+
+        # act
+        result = _detect_approle_auth()
+
+        # assert
+        assert result is None
+
+
+class TestDetectKubernetesAuth:
+    def test_role_present__returns_kubernetes_auth(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('VAULT_KUBERNETES_ROLE', 'myapp')
+
+        # act
+        result = _detect_kubernetes_auth()
+
+        # assert
+        assert isinstance(result, KubernetesAuth)
+        assert result.role == 'myapp'
+        assert result.mount_path == 'kubernetes'
+
+    def test_custom_mount_path__uses_env_value(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('VAULT_KUBERNETES_ROLE', 'myapp')
+        monkeypatch.setenv('VAULT_KUBERNETES_MOUNT_PATH', 'k8s-cluster')
+
+        # act
+        result = _detect_kubernetes_auth()
+
+        # assert
+        assert result.mount_path == 'k8s-cluster'
+
+    def test_no_role__returns_none(self, monkeypatch):
+        # arrange
+        monkeypatch.delenv('VAULT_KUBERNETES_ROLE', raising=False)
+
+        # act
+        result = _detect_kubernetes_auth()
+
+        # assert
+        assert result is None
+
+
+class TestDetectJwtAuth:
+    def test_both_credentials_present__returns_jwt_auth(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('VAULT_JWT_ROLE', 'myproject')
+        monkeypatch.setenv('VAULT_JWT_TOKEN', 'eyJ...')
+
+        # act
+        result = _detect_jwt_auth()
+
+        # assert
+        assert isinstance(result, JwtAuth)
+        assert result.role == 'myproject'
+        assert result.jwt == 'eyJ...'
+        assert result.mount_path == 'jwt'
+
+    def test_custom_mount_path__uses_env_value(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('VAULT_JWT_ROLE', 'myproject')
+        monkeypatch.setenv('VAULT_JWT_TOKEN', 'eyJ...')
+        monkeypatch.setenv('VAULT_JWT_MOUNT_PATH', 'oidc')
+
+        # act
+        result = _detect_jwt_auth()
+
+        # assert
+        assert result.mount_path == 'oidc'
+
+    def test_only_role__returns_none(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('VAULT_JWT_ROLE', 'myproject')
+        monkeypatch.delenv('VAULT_JWT_TOKEN', raising=False)
+
+        # act
+        result = _detect_jwt_auth()
+
+        # assert
+        assert result is None
+
+    def test_only_jwt__returns_none(self, monkeypatch):
+        # arrange
+        monkeypatch.delenv('VAULT_JWT_ROLE', raising=False)
+        monkeypatch.setenv('VAULT_JWT_TOKEN', 'eyJ...')
+
+        # act
+        result = _detect_jwt_auth()
+
+        # assert
+        assert result is None
+
+
+class TestDetectUserpassAuth:
+    def test_both_credentials_present__returns_userpass_auth(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('VAULT_USERNAME', 'admin')
+        monkeypatch.setenv('VAULT_PASSWORD', 'secret')
+
+        # act
+        result = _detect_userpass_auth()
+
+        # assert
+        assert isinstance(result, UserpassAuth)
+        assert result.username == 'admin'
+        assert result.password == 'secret'
+        assert result.mount_path == 'userpass'
+
+    def test_custom_mount_path__uses_env_value(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('VAULT_USERNAME', 'admin')
+        monkeypatch.setenv('VAULT_PASSWORD', 'secret')
+        monkeypatch.setenv('VAULT_USERPASS_MOUNT_PATH', 'ldap')
+
+        # act
+        result = _detect_userpass_auth()
+
+        # assert
+        assert result.mount_path == 'ldap'
+
+    def test_only_username__returns_none(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('VAULT_USERNAME', 'admin')
+        monkeypatch.delenv('VAULT_PASSWORD', raising=False)
+
+        # act
+        result = _detect_userpass_auth()
+
+        # assert
+        assert result is None
+
+    def test_only_password__returns_none(self, monkeypatch):
+        # arrange
+        monkeypatch.delenv('VAULT_USERNAME', raising=False)
+        monkeypatch.setenv('VAULT_PASSWORD', 'secret')
+
+        # act
+        result = _detect_userpass_auth()
+
+        # assert
+        assert result is None
+
+
+class TestVaultAuthFromEnv:
+    def test_no_credentials__returns_empty_list(self, monkeypatch):
+        # arrange
+        monkeypatch.delenv('VAULT_TOKEN', raising=False)
+        monkeypatch.delenv('VAULT_ROLE_ID', raising=False)
+        monkeypatch.delenv('VAULT_SECRET_ID', raising=False)
+        monkeypatch.delenv('VAULT_KUBERNETES_ROLE', raising=False)
+        monkeypatch.delenv('VAULT_JWT_ROLE', raising=False)
+        monkeypatch.delenv('VAULT_JWT_TOKEN', raising=False)
+        monkeypatch.delenv('VAULT_USERNAME', raising=False)
+        monkeypatch.delenv('VAULT_PASSWORD', raising=False)
+
+        # act
+        result = vault_auth_from_env()
+
+        # assert
+        assert result == []
+
+    def test_multiple_credentials__returns_sorted_by_priority(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('VAULT_USERNAME', 'admin')
+        monkeypatch.setenv('VAULT_PASSWORD', 'secret')
+        monkeypatch.setenv('VAULT_TOKEN', 'hvs.xxx')
+        monkeypatch.delenv('VAULT_ROLE_ID', raising=False)
+        monkeypatch.delenv('VAULT_SECRET_ID', raising=False)
+        monkeypatch.delenv('VAULT_KUBERNETES_ROLE', raising=False)
+        monkeypatch.delenv('VAULT_JWT_ROLE', raising=False)
+        monkeypatch.delenv('VAULT_JWT_TOKEN', raising=False)
+
+        # act
+        result = vault_auth_from_env()
+
+        # assert
+        assert len(result) == 2
+        assert isinstance(result[0], TokenAuth)
+        assert isinstance(result[1], UserpassAuth)
+
+    def test_method_token__only_checks_token(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('VAULT_TOKEN', 'hvs.xxx')
+        monkeypatch.setenv('VAULT_USERNAME', 'admin')
+        monkeypatch.setenv('VAULT_PASSWORD', 'secret')
+
+        # act
+        result = vault_auth_from_env(method='token')
+
+        # assert
+        assert len(result) == 1
+        assert isinstance(result[0], TokenAuth)
+
+    def test_method_approle__only_checks_approle(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('VAULT_TOKEN', 'hvs.xxx')
+        monkeypatch.setenv('VAULT_ROLE_ID', 'role123')
+        monkeypatch.setenv('VAULT_SECRET_ID', 'secret456')
+
+        # act
+        result = vault_auth_from_env(method='approle')
+
+        # assert
+        assert len(result) == 1
+        assert isinstance(result[0], AppRoleAuth)
+
+    def test_method_not_found__returns_empty_list(self, monkeypatch):
+        # arrange
+        monkeypatch.delenv('VAULT_TOKEN', raising=False)
+
+        # act
+        result = vault_auth_from_env(method='token')
+
+        # assert
+        assert result == []
+
+    def test_all_methods_available__returns_in_priority_order(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('VAULT_TOKEN', 'hvs.xxx')
+        monkeypatch.setenv('VAULT_ROLE_ID', 'role123')
+        monkeypatch.setenv('VAULT_SECRET_ID', 'secret456')
+        monkeypatch.setenv('VAULT_KUBERNETES_ROLE', 'myapp')
+        monkeypatch.setenv('VAULT_JWT_ROLE', 'myproject')
+        monkeypatch.setenv('VAULT_JWT_TOKEN', 'eyJ...')
+        monkeypatch.setenv('VAULT_USERNAME', 'admin')
+        monkeypatch.setenv('VAULT_PASSWORD', 'secret')
+
+        # act
+        result = vault_auth_from_env()
+
+        # assert (order: approle, kubernetes, token, jwt, userpass)
+        assert len(result) == 5
+        assert isinstance(result[0], AppRoleAuth)
+        assert isinstance(result[1], KubernetesAuth)
+        assert isinstance(result[2], TokenAuth)
+        assert isinstance(result[3], JwtAuth)
+        assert isinstance(result[4], UserpassAuth)
 
 
 # fixtures and helpers

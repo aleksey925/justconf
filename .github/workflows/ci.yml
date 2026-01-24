@@ -28,6 +28,9 @@ jobs:
       matrix:
         py_version: ["3.11", "3.12", "3.13", "3.14"]
         os: [ubuntu-latest]
+        include:
+          - py_version: "3.11"
+            upload_coverage: true
     runs-on: "${{ matrix.os }}"
     steps:
       - uses: actions/checkout@v5
@@ -42,3 +45,10 @@ jobs:
 
       - name: Run tests
         run: make test
+
+      - name: Upload coverage to Codecov
+        if: matrix.upload_coverage
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: true

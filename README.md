@@ -1,5 +1,11 @@
 # justconf
 
+[![license](https://img.shields.io/pypi/l/justconf?style=for-the-badge)](https://pypi.org/project/justconf/)
+[![python version](https://img.shields.io/pypi/pyversions/justconf?style=for-the-badge)](https://pypi.org/project/justconf/)
+[![version](https://img.shields.io/pypi/v/justconf?style=for-the-badge)](https://pypi.org/project/justconf/)
+[![coverage](https://img.shields.io/codecov/c/github/aleksey925/justconf/master?style=for-the-badge)](https://app.codecov.io/gh/aleksey925/justconf)
+[![downloads](https://img.shields.io/pypi/dm/justconf?style=for-the-badge)](https://pypi.org/project/justconf/)
+
 Minimal schema-agnostic configuration library for Python.
 
 Provides simple, composable building blocks for configuration management:

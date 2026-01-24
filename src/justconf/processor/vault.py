@@ -306,7 +306,14 @@ class UserpassAuth(VaultAuth):
 
 
 class VaultProcessor(Processor):
-    """Processor for HashiCorp Vault secrets (KV v2)."""
+    """Processor for HashiCorp Vault secrets (KV v2).
+
+    Uses full paths in placeholders: {mount}/data/{secret_path}.
+
+    Example placeholders:
+        ${vault:secret/data/myapp#password}  # KV v2 at 'secret' mount
+        ${vault:kv/data/db#user}             # KV v2 at 'kv' mount
+    """
 
     name = 'vault'
 
@@ -314,7 +321,6 @@ class VaultProcessor(Processor):
         self,
         url: str,
         auth: VaultAuth | list[VaultAuth],
-        mount_path: str,
         timeout: int = 30,
         verify: bool | str = True,
     ):
@@ -323,7 +329,6 @@ class VaultProcessor(Processor):
         Args:
             url: Base URL of the Vault server.
             auth: Authentication method or list of methods (fallback chain).
-            mount_path: KV v2 mount path.
             timeout: Request timeout in seconds.
             verify: SSL certificate verification. True (default) uses system CA,
                     False disables verification, or path to CA bundle file.
@@ -339,7 +344,6 @@ class VaultProcessor(Processor):
 
         self.url = url.rstrip('/')
         self.auth_methods = auth if isinstance(auth, list) else [auth]
-        self.mount_path = mount_path
         self.timeout = timeout
         self._ssl_context = _create_ssl_context(verify)
 
@@ -377,7 +381,7 @@ class VaultProcessor(Processor):
     def _do_request(self, path: str, token: str) -> dict[str, Any]:
         """Make request to Vault."""
         req = urllib.request.Request(
-            f'{self.url}/v1/{self.mount_path}/data/{path}',
+            f'{self.url}/v1/{path}',
             headers={'X-Vault-Token': token},
         )
         try:

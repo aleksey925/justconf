@@ -14,22 +14,22 @@ class TestExtractPlaceholdersPlainClass:
     ):
         # arrange
         class Config:
-            password: Annotated[str, Placeholder('${vault:db#password}')]
+            password: Annotated[str, Placeholder('${vault:secret/data/db#password}')]
 
         # act
         result = extract_placeholders(Config)
 
         # assert
-        assert result == {'password': '${vault:db#password}'}
+        assert result == {'password': '${vault:secret/data/db#password}'}
 
     def test_extract_placeholders__deeply_nested_plain_classes__recursive_extraction(self):
         # arrange
         class Inner:
-            secret: Annotated[str, Placeholder('${vault:inner#secret}')]
+            secret: Annotated[str, Placeholder('${vault:secret/data/inner#secret}')]
 
         class Middle:
             inner: Inner
-            key: Annotated[str, Placeholder('${vault:middle#key}')]
+            key: Annotated[str, Placeholder('${vault:secret/data/middle#key}')]
 
         class Outer:
             middle: Middle
@@ -40,8 +40,8 @@ class TestExtractPlaceholdersPlainClass:
         # assert
         assert result == {
             'middle': {
-                'inner': {'secret': '${vault:inner#secret}'},
-                'key': '${vault:middle#key}',
+                'inner': {'secret': '${vault:secret/data/inner#secret}'},
+                'key': '${vault:secret/data/middle#key}',
             },
         }
 
@@ -50,20 +50,20 @@ class TestExtractPlaceholdersPlainClass:
         class Config:
             host: str = 'localhost'
             port: int = 5432
-            password: Annotated[str, Placeholder('${vault:db#password}')]
+            password: Annotated[str, Placeholder('${vault:secret/data/db#password}')]
             debug: bool = False
 
         # act
         result = extract_placeholders(Config)
 
         # assert
-        assert result == {'password': '${vault:db#password}'}
+        assert result == {'password': '${vault:secret/data/db#password}'}
 
     def test_extract_placeholders__multiple_placeholders__all_extracted(self):
         # arrange
         class Config:
-            db_password: Annotated[str, Placeholder('${vault:db#password}')]
-            api_key: Annotated[str, Placeholder('${vault:api#key}')]
+            db_password: Annotated[str, Placeholder('${vault:secret/data/db#password}')]
+            api_key: Annotated[str, Placeholder('${vault:secret/data/api#key}')]
             token: Annotated[str, Placeholder('${env:AUTH_TOKEN}')]
 
         # act
@@ -71,8 +71,8 @@ class TestExtractPlaceholdersPlainClass:
 
         # assert
         assert result == {
-            'db_password': '${vault:db#password}',
-            'api_key': '${vault:api#key}',
+            'db_password': '${vault:secret/data/db#password}',
+            'api_key': '${vault:secret/data/api#key}',
             'token': '${env:AUTH_TOKEN}',
         }
 
@@ -80,13 +80,13 @@ class TestExtractPlaceholdersPlainClass:
         # arrange
         class Config:
             name: Annotated[str, 'some other annotation']
-            password: Annotated[str, Placeholder('${vault:db#password}')]
+            password: Annotated[str, Placeholder('${vault:secret/data/db#password}')]
 
         # act
         result = extract_placeholders(Config)
 
         # assert
-        assert result == {'password': '${vault:db#password}'}
+        assert result == {'password': '${vault:secret/data/db#password}'}
 
     def test_extract_placeholders__empty_class__returns_empty_dict(self):
         # arrange
@@ -107,24 +107,24 @@ class TestExtractPlaceholdersDataclass:
         # arrange
         @dataclass
         class Config:
-            token: Annotated[str, Placeholder('${vault:auth#token}')]
+            token: Annotated[str, Placeholder('${vault:secret/data/auth#token}')]
 
         # act
         result = extract_placeholders(Config)
 
         # assert
-        assert result == {'token': '${vault:auth#token}'}
+        assert result == {'token': '${vault:secret/data/auth#token}'}
 
     def test_extract_placeholders__nested_dataclasses__recursive_extraction(self):
         # arrange
         @dataclass
         class DatabaseConfig:
-            password: Annotated[str, Placeholder('${vault:db/creds#password}')]
+            password: Annotated[str, Placeholder('${vault:secret/data/db/creds#password}')]
             host: str = 'localhost'
 
         @dataclass
         class AppConfig:
-            api_key: Annotated[str, Placeholder('${vault:api#key}')]
+            api_key: Annotated[str, Placeholder('${vault:secret/data/api#key}')]
             database: DatabaseConfig = None  # type: ignore[assignment]
 
         # act
@@ -132,8 +132,8 @@ class TestExtractPlaceholdersDataclass:
 
         # assert
         assert result == {
-            'database': {'password': '${vault:db/creds#password}'},
-            'api_key': '${vault:api#key}',
+            'database': {'password': '${vault:secret/data/db/creds#password}'},
+            'api_key': '${vault:secret/data/api#key}',
         }
 
     def test_extract_placeholders__no_placeholders__returns_empty_dict(self):
@@ -160,13 +160,13 @@ class TestExtractPlaceholdersDataclass:
         @dataclass
         class AppConfig:
             database: DatabaseConfig
-            api_key: Annotated[str, Placeholder('${vault:api#key}')]
+            api_key: Annotated[str, Placeholder('${vault:secret/data/api#key}')]
 
         # act
         result = extract_placeholders(AppConfig)
 
         # assert
-        assert result == {'api_key': '${vault:api#key}'}
+        assert result == {'api_key': '${vault:secret/data/api#key}'}
 
 
 class TestExtractPlaceholdersPydantic:
@@ -175,31 +175,31 @@ class TestExtractPlaceholdersPydantic:
     ):
         # arrange
         class Config(BaseModel):
-            api_key: Annotated[str, Placeholder('${vault:api#key}')]
+            api_key: Annotated[str, Placeholder('${vault:secret/data/api#key}')]
 
         # act
         result = extract_placeholders(Config)
 
         # assert
-        assert result == {'api_key': '${vault:api#key}'}
+        assert result == {'api_key': '${vault:secret/data/api#key}'}
 
     def test_extract_placeholders__nested_pydantic_models__recursive_extraction(self):
         # arrange
         class DatabaseConfig(BaseModel):
             host: str = 'localhost'
-            password: Annotated[str, Placeholder('${vault:db/creds#password}')]
+            password: Annotated[str, Placeholder('${vault:secret/data/db/creds#password}')]
 
         class AppConfig(BaseModel):
             database: DatabaseConfig
-            api_key: Annotated[str, Placeholder('${vault:api#key}')]
+            api_key: Annotated[str, Placeholder('${vault:secret/data/api#key}')]
 
         # act
         result = extract_placeholders(AppConfig)
 
         # assert
         assert result == {
-            'database': {'password': '${vault:db/creds#password}'},
-            'api_key': '${vault:api#key}',
+            'database': {'password': '${vault:secret/data/db/creds#password}'},
+            'api_key': '${vault:secret/data/api#key}',
         }
 
     def test_extract_placeholders__pydantic_no_placeholders__returns_empty_dict(self):
@@ -218,14 +218,14 @@ class TestExtractPlaceholdersPydantic:
         # arrange
         class Config(BaseModel):
             host: str = 'localhost'
-            password: Annotated[str, Placeholder('${vault:db#password}')]
+            password: Annotated[str, Placeholder('${vault:secret/data/db#password}')]
             debug: bool = False
 
         # act
         result = extract_placeholders(Config)
 
         # assert
-        assert result == {'password': '${vault:db#password}'}
+        assert result == {'password': '${vault:secret/data/db#password}'}
 
 
 class TestExtractPlaceholdersMsgspec:
@@ -234,22 +234,22 @@ class TestExtractPlaceholdersMsgspec:
     ):
         # arrange
         class Config(msgspec.Struct):
-            api_key: Annotated[str, Placeholder('${vault:api#key}')]
+            api_key: Annotated[str, Placeholder('${vault:secret/data/api#key}')]
 
         # act
         result = extract_placeholders(Config)
 
         # assert
-        assert result == {'api_key': '${vault:api#key}'}
+        assert result == {'api_key': '${vault:secret/data/api#key}'}
 
     def test_extract_placeholders__nested_msgspec_structs__recursive_extraction(self):
         # arrange
         class DatabaseConfig(msgspec.Struct):
-            password: Annotated[str, Placeholder('${vault:db/creds#password}')]
+            password: Annotated[str, Placeholder('${vault:secret/data/db/creds#password}')]
             host: str = 'localhost'
 
         class AppConfig(msgspec.Struct):
-            api_key: Annotated[str, Placeholder('${vault:api#key}')]
+            api_key: Annotated[str, Placeholder('${vault:secret/data/api#key}')]
             database: DatabaseConfig = None  # type: ignore[assignment]
 
         # act
@@ -257,8 +257,8 @@ class TestExtractPlaceholdersMsgspec:
 
         # assert
         assert result == {
-            'database': {'password': '${vault:db/creds#password}'},
-            'api_key': '${vault:api#key}',
+            'database': {'password': '${vault:secret/data/db/creds#password}'},
+            'api_key': '${vault:secret/data/api#key}',
         }
 
     def test_extract_placeholders__msgspec_no_placeholders__returns_empty_dict(self):
@@ -276,7 +276,7 @@ class TestExtractPlaceholdersMsgspec:
     def test_extract_placeholders__msgspec_mixed_fields__only_placeholders_extracted(self):
         # arrange
         class Config(msgspec.Struct):
-            password: Annotated[str, Placeholder('${vault:db#password}')]
+            password: Annotated[str, Placeholder('${vault:secret/data/db#password}')]
             host: str = 'localhost'
             debug: bool = False
 
@@ -284,7 +284,7 @@ class TestExtractPlaceholdersMsgspec:
         result = extract_placeholders(Config)
 
         # assert
-        assert result == {'password': '${vault:db#password}'}
+        assert result == {'password': '${vault:secret/data/db#password}'}
 
 
 class TestPlaceholder:

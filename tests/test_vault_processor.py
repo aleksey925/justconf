@@ -349,7 +349,6 @@ class TestVaultProcessor:
             VaultProcessor(
                 url='ftp://vault:8200',
                 auth=TokenAuth(token='test'),
-                mount_path='secret',
             )
 
     def test_init__missing_host__raises_error(self):
@@ -358,7 +357,6 @@ class TestVaultProcessor:
             VaultProcessor(
                 url='http://',
                 auth=TokenAuth(token='test'),
-                mount_path='secret',
             )
 
     def test_init__url_trailing_slash__stripped(self):
@@ -366,18 +364,16 @@ class TestVaultProcessor:
         processor = VaultProcessor(
             url='http://vault:8200/',
             auth=TokenAuth(token='test'),
-            mount_path='secret',
         )
 
         # assert
         assert processor.url == 'http://vault:8200'
 
-    def test_init__custom_mount_path__used_in_requests(self):
+    def test_init__full_path_used_in_requests(self):
         # arrange
         processor = VaultProcessor(
             url='http://vault:8200',
             auth=TokenAuth(token='test_token'),
-            mount_path='kv',
         )
         mock_token_response = {'data': {'ttl': 3600}}
         mock_secret_response = {'data': {'data': {'key': 'value'}}}
@@ -388,14 +384,14 @@ class TestVaultProcessor:
             if 'lookup-self' in url:
                 mock.__enter__.return_value.read.return_value = json.dumps(mock_token_response).encode()
             else:
-                # verify custom mount path is used
-                assert '/v1/kv/data/' in url
+                # verify full path is used as-is
+                assert '/v1/kv/data/secret/test' in url
                 mock.__enter__.return_value.read.return_value = json.dumps(mock_secret_response).encode()
             return mock
 
         # act
         with patch('urllib.request.urlopen', side_effect=side_effect):
-            result = processor.resolve('secret/test', 'key')
+            result = processor.resolve('kv/data/secret/test', 'key')
 
         # assert
         assert result == 'value'
@@ -405,7 +401,6 @@ class TestVaultProcessor:
         processor = VaultProcessor(
             url='http://vault:8200',
             auth=TokenAuth(token='test'),
-            mount_path='secret',
             timeout=60,
         )
 
@@ -426,7 +421,7 @@ class TestVaultProcessor:
             mock_urlopen.return_value.__enter__.return_value.read.return_value = json.dumps(
                 mock_secret_response
             ).encode()
-            result = processor.resolve('secret/db', 'password')
+            result = processor.resolve('secret/data/db', 'password')
 
         # assert
         assert result == 'secret123'
@@ -445,7 +440,7 @@ class TestVaultProcessor:
             mock_urlopen.return_value.__enter__.return_value.read.return_value = json.dumps(
                 mock_secret_response
             ).encode()
-            result = processor.resolve('secret/db')
+            result = processor.resolve('secret/data/db')
 
         # assert
         assert result == {'user': 'admin', 'pass': 'secret'}
@@ -465,7 +460,7 @@ class TestVaultProcessor:
         # act & assert
         with patch('urllib.request.urlopen', side_effect=side_effect):
             with pytest.raises(SecretNotFoundError, match='Secret not found'):
-                processor.resolve('secret/nonexistent', 'key')
+                processor.resolve('secret/data/nonexistent', 'key')
 
     def test_resolve__key_not_found__raises_error(self):
         # arrange
@@ -482,7 +477,7 @@ class TestVaultProcessor:
                 mock_secret_response
             ).encode()
             with pytest.raises(SecretNotFoundError, match="Key 'password' not found"):
-                processor.resolve('secret/db', 'password')
+                processor.resolve('secret/data/db', 'password')
 
     def test_resolve__path_with_trailing_slash__normalized(self):
         # arrange
@@ -494,7 +489,7 @@ class TestVaultProcessor:
             mock_urlopen.return_value.__enter__.return_value.read.return_value = json.dumps(
                 mock_secret_response
             ).encode()
-            result = processor.resolve('database/', 'password')
+            result = processor.resolve('secret/data/database/', 'password')
 
             # assert
             call_args = mock_urlopen.call_args[0][0]
@@ -512,12 +507,12 @@ class TestVaultProcessor:
             mock_urlopen.return_value.__enter__.return_value.read.return_value = json.dumps(
                 mock_secret_response
             ).encode()
-            result = processor.resolve('/database', 'password')
+            result = processor.resolve('/secret/data/database', 'password')
 
             # assert
             call_args = mock_urlopen.call_args[0][0]
             assert '/v1/secret/data/database' in call_args.full_url
-            assert '//database' not in call_args.full_url
+            assert '//secret' not in call_args.full_url
             assert result == 'secret123'
 
     def test_resolve__path_with_both_slashes__normalized(self):
@@ -530,7 +525,7 @@ class TestVaultProcessor:
             mock_urlopen.return_value.__enter__.return_value.read.return_value = json.dumps(
                 mock_secret_response
             ).encode()
-            result = processor.resolve('/database/', 'password')
+            result = processor.resolve('/secret/data/database/', 'password')
 
             # assert
             call_args = mock_urlopen.call_args[0][0]
@@ -555,9 +550,9 @@ class TestVaultProcessor:
         # act
         with patch('urllib.request.urlopen', side_effect=mock_urlopen_side_effect):
             with processor.caching():
-                processor.resolve('secret/db', 'password')
-                processor.resolve('secret/db', 'password')
-                processor.resolve('secret/db', 'password')
+                processor.resolve('secret/data/db', 'password')
+                processor.resolve('secret/data/db', 'password')
+                processor.resolve('secret/data/db', 'password')
 
         # assert (1 auth call + 1 secret call = 2, not 4)
         assert call_count == 2
@@ -569,7 +564,6 @@ class TestVaultProcessor:
         processor = VaultProcessor(
             url='http://vault:8200',
             auth=[failing_auth, succeeding_auth],
-            mount_path='secret',
         )
 
         mock_token_response = {'data': {'ttl': 3600}}
@@ -593,7 +587,7 @@ class TestVaultProcessor:
                 return mock
 
             mock_urlopen.side_effect = side_effect
-            result = processor.resolve('secret/test', 'key')
+            result = processor.resolve('secret/data/test', 'key')
 
         # assert
         assert result == 'value'
@@ -606,12 +600,11 @@ class TestVaultProcessor:
                 TokenAuth(token=''),
                 AppRoleAuth(role_id='', secret_id=''),
             ],
-            mount_path='secret',
         )
 
         # act & assert
         with pytest.raises(NoValidAuthError, match='All authentication methods failed'):
-            processor.resolve('secret/test', 'key')
+            processor.resolve('secret/data/test', 'key')
 
     def test_token_caching__reuses_token_within_ttl(self):
         # arrange
@@ -632,9 +625,9 @@ class TestVaultProcessor:
 
         # act
         with patch('urllib.request.urlopen', side_effect=side_effect):
-            processor.resolve('secret/a', 'key')
-            processor.resolve('secret/b', 'key')
-            processor.resolve('secret/c', 'key')
+            processor.resolve('secret/data/a', 'key')
+            processor.resolve('secret/data/b', 'key')
+            processor.resolve('secret/data/c', 'key')
 
         # assert (only 1 auth call, not 3)
         assert auth_call_count == 1
@@ -644,7 +637,6 @@ class TestVaultProcessor:
         processor = VaultProcessor(
             url='https://vault:8200',
             auth=TokenAuth(token='test'),
-            mount_path='secret',
             verify=False,
         )
 
@@ -662,7 +654,6 @@ class TestVaultProcessor:
             processor = VaultProcessor(
                 url='https://vault:8200',
                 auth=TokenAuth(token='test'),
-                mount_path='secret',
                 verify='/path/to/ca.crt',
             )
 
@@ -676,7 +667,6 @@ class TestVaultProcessor:
             VaultProcessor(
                 url='https://vault:8200',
                 auth=TokenAuth(token='test'),
-                mount_path='secret',
                 verify='/nonexistent/ca.crt',
             )
 
@@ -685,7 +675,6 @@ class TestVaultProcessor:
         processor = VaultProcessor(
             url='https://vault:8200',
             auth=TokenAuth(token='test'),
-            mount_path='secret',
             verify=False,
         )
         mock_response = {'data': {'data': {'key': 'value'}}}
@@ -701,7 +690,7 @@ class TestVaultProcessor:
 
         # act
         with patch('urllib.request.urlopen', side_effect=side_effect) as mock_urlopen:
-            processor.resolve('secret/test', 'key')
+            processor.resolve('secret/data/test', 'key')
 
             # assert
             for call in mock_urlopen.call_args_list:
@@ -731,7 +720,7 @@ class TestVaultProcessor:
 
         # act
         with patch('urllib.request.urlopen', side_effect=side_effect):
-            result = processor.resolve('secret/test', 'key')
+            result = processor.resolve('secret/data/test', 'key')
 
         # assert
         assert result == 'value'
@@ -747,7 +736,6 @@ class TestVaultProcessor:
         processor = VaultProcessor(
             url='http://vault:8200',
             auth=[auth1, auth2, auth3],
-            mount_path='secret',
         )
 
         mock_token_response = {'data': {'ttl': 3600}}
@@ -764,7 +752,7 @@ class TestVaultProcessor:
 
         # act
         with patch('urllib.request.urlopen', side_effect=side_effect):
-            result = processor.resolve('secret/test', 'key')
+            result = processor.resolve('secret/data/test', 'key')
 
         # assert
         assert result == 'value'
@@ -789,9 +777,9 @@ class TestVaultProcessor:
 
         # act (without caching context)
         with patch('urllib.request.urlopen', side_effect=mock_urlopen_side_effect):
-            processor.resolve('secret/db', 'password')
-            processor.resolve('secret/db', 'password')
-            processor.resolve('secret/db', 'password')
+            processor.resolve('secret/data/db', 'password')
+            processor.resolve('secret/data/db', 'password')
+            processor.resolve('secret/data/db', 'password')
 
         # assert (each call fetches secret)
         assert call_count == 3
@@ -801,7 +789,6 @@ class TestVaultProcessor:
         processor = VaultProcessor(
             url='http://vault:8200',
             auth=TokenAuth(token='test'),
-            mount_path='secret',
         )
 
         # assert
@@ -1154,7 +1141,6 @@ def create_processor_with_mock_auth():
     return VaultProcessor(
         url='http://vault:8200',
         auth=TokenAuth(token='test_token'),
-        mount_path='secret',
     )
 
 

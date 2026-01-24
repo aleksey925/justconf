@@ -57,11 +57,10 @@ class TestVaultIntegrationBasic:
         processor = VaultProcessor(
             url=VAULT_URL,
             auth=TokenAuth(token=VAULT_TOKEN),
-            mount_path='secret',
         )
 
         # act
-        result = processor.resolve('database', 'password')
+        result = processor.resolve('secret/data/database', 'password')
 
         # assert
         assert result == 'super_secret_password_123'
@@ -71,11 +70,10 @@ class TestVaultIntegrationBasic:
         processor = VaultProcessor(
             url=VAULT_URL,
             auth=TokenAuth(token=VAULT_TOKEN),
-            mount_path='secret',
         )
 
         # act
-        result = processor.resolve('api')
+        result = processor.resolve('secret/data/api')
 
         # assert
         assert result == {
@@ -89,24 +87,22 @@ class TestVaultIntegrationBasic:
         processor = VaultProcessor(
             url=VAULT_URL,
             auth=TokenAuth(token=VAULT_TOKEN),
-            mount_path='secret',
         )
 
         # act & assert
         with pytest.raises(SecretNotFoundError, match='Secret not found'):
-            processor.resolve('nonexistent/secret', 'key')
+            processor.resolve('secret/data/nonexistent/secret', 'key')
 
     def test_resolve__key_not_found__raises_error(self, vault_secrets):
         # arrange
         processor = VaultProcessor(
             url=VAULT_URL,
             auth=TokenAuth(token=VAULT_TOKEN),
-            mount_path='secret',
         )
 
         # act & assert
         with pytest.raises(SecretNotFoundError, match="Key 'nonexistent' not found"):
-            processor.resolve('database', 'nonexistent')
+            processor.resolve('secret/data/database', 'nonexistent')
 
 
 class TestVaultIntegrationProcess:
@@ -116,16 +112,15 @@ class TestVaultIntegrationProcess:
         # arrange
         config = {
             'database': {
-                'host': '${vault:database#host}',
-                'port': '${vault:database#port}',
-                'username': '${vault:database#username}',
-                'password': '${vault:database#password}',
+                'host': '${vault:secret/data/database#host}',
+                'port': '${vault:secret/data/database#port}',
+                'username': '${vault:secret/data/database#username}',
+                'password': '${vault:secret/data/database#password}',
             },
         }
         processor = VaultProcessor(
             url=VAULT_URL,
             auth=TokenAuth(token=VAULT_TOKEN),
-            mount_path='secret',
         )
 
         # act
@@ -144,12 +139,11 @@ class TestVaultIntegrationProcess:
     def test_process__embedded_placeholders__resolves(self, vault_secrets):
         # arrange
         config = {
-            'database_url': 'postgres://${vault:database#username}:${vault:database#password}@${vault:database#host}:${vault:database#port}/mydb',
+            'database_url': 'postgres://${vault:secret/data/database#username}:${vault:secret/data/database#password}@${vault:secret/data/database#host}:${vault:secret/data/database#port}/mydb',
         }
         processor = VaultProcessor(
             url=VAULT_URL,
             auth=TokenAuth(token=VAULT_TOKEN),
-            mount_path='secret',
         )
 
         # act
@@ -163,13 +157,12 @@ class TestVaultIntegrationProcess:
         ca_path = tmp_path / 'ca.pem'
         config = {
             'tls': {
-                'ca_file': f'${{vault:tls#ca_cert|file:{ca_path}}}',
+                'ca_file': f'${{vault:secret/data/tls#ca_cert|file:{ca_path}}}',
             },
         }
         processor = VaultProcessor(
             url=VAULT_URL,
             auth=TokenAuth(token=VAULT_TOKEN),
-            mount_path='secret',
         )
 
         # act
@@ -183,14 +176,13 @@ class TestVaultIntegrationProcess:
     def test_process__caching__fetches_secret_once(self, vault_secrets):
         # arrange
         config = {
-            'pass1': '${vault:database#password}',
-            'pass2': '${vault:database#password}',
-            'pass3': '${vault:database#password}',
+            'pass1': '${vault:secret/data/database#password}',
+            'pass2': '${vault:secret/data/database#password}',
+            'pass3': '${vault:secret/data/database#password}',
         }
         processor = VaultProcessor(
             url=VAULT_URL,
             auth=TokenAuth(token=VAULT_TOKEN),
-            mount_path='secret',
         )
 
         # act
@@ -219,16 +211,15 @@ pool_size = 10
 
         secrets_config = {
             'database': {
-                'host': '${vault:database#host}',
-                'username': '${vault:database#username}',
-                'password': '${vault:database#password}',
+                'host': '${vault:secret/data/database#host}',
+                'username': '${vault:secret/data/database#username}',
+                'password': '${vault:secret/data/database#password}',
             },
         }
 
         processor = VaultProcessor(
             url=VAULT_URL,
             auth=TokenAuth(token=VAULT_TOKEN),
-            mount_path='secret',
         )
 
         # act
@@ -252,11 +243,10 @@ class TestVaultIntegrationAppRole:
         processor = VaultProcessor(
             url=VAULT_URL,
             auth=AppRoleAuth(role_id=role_id, secret_id=secret_id),
-            mount_path='secret',
         )
 
         # act
-        result = processor.resolve('database', 'password')
+        result = processor.resolve('secret/data/database', 'password')
 
         # assert
         assert result == 'super_secret_password_123'
@@ -270,11 +260,10 @@ class TestVaultIntegrationAppRole:
                 TokenAuth(token='invalid_token'),
                 AppRoleAuth(role_id=role_id, secret_id=secret_id),
             ],
-            mount_path='secret',
         )
 
         # act
-        result = processor.resolve('database', 'password')
+        result = processor.resolve('secret/data/database', 'password')
 
         # assert
         assert result == 'super_secret_password_123'
@@ -289,11 +278,10 @@ class TestVaultIntegrationUserpass:
         processor = VaultProcessor(
             url=VAULT_URL,
             auth=UserpassAuth(username=username, password=password),
-            mount_path='secret',
         )
 
         # act
-        result = processor.resolve('database', 'password')
+        result = processor.resolve('secret/data/database', 'password')
 
         # assert
         assert result == 'super_secret_password_123'
@@ -304,12 +292,11 @@ class TestVaultIntegrationUserpass:
         processor = VaultProcessor(
             url=VAULT_URL,
             auth=UserpassAuth(username=username, password='wrong_password'),
-            mount_path='secret',
         )
 
         # act & assert
         with pytest.raises(NoValidAuthError):
-            processor.resolve('database', 'password')
+            processor.resolve('secret/data/database', 'password')
 
     def test_userpass_auth__fallback_chain(self, vault_secrets, userpass_credentials):
         # arrange
@@ -321,11 +308,10 @@ class TestVaultIntegrationUserpass:
                 UserpassAuth(username='wronguser', password='wrongpass'),
                 UserpassAuth(username=username, password=password),
             ],
-            mount_path='secret',
         )
 
         # act
-        result = processor.resolve('database', 'password')
+        result = processor.resolve('secret/data/database', 'password')
 
         # assert
         assert result == 'super_secret_password_123'

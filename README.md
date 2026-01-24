@@ -35,49 +35,38 @@ pip install justconf[dotenv]
 ## Quick Start
 
 ```python
-from justconf import env_loader, dotenv_loader, toml_loader, merge
-
-# Load from multiple sources and merge (later sources have higher priority)
-config = merge(
-    toml_loader("config.toml"),      # base config
-    dotenv_loader(".env"),           # override with .env
-    env_loader(prefix="APP"),        # highest priority: environment variables
-)
-
-# Use with your preferred validation library
+from typing import Annotated
 from pydantic import BaseModel
+from justconf import merge, process, toml_loader, env_loader
+from justconf.processor import VaultProcessor, TokenAuth
+from justconf.schema import Placeholder, extract_placeholders
 
+# Define schema with secret placeholders
 class DatabaseConfig(BaseModel):
-    host: str
+    host: str = "localhost"
     port: int = 5432
+    password: Annotated[str, Placeholder("${vault:secret/data/db#password}")]
 
 class AppConfig(BaseModel):
     debug: bool = False
     database: DatabaseConfig
 
-app_config = AppConfig(**config)
-```
-
-### With Secret Resolution
-
-```python
-from justconf import merge, toml_loader, process
-from justconf.processor import VaultProcessor, TokenAuth
-
-# Load and merge config
+# Load and merge (later sources override earlier)
 config = merge(
-    toml_loader("config.toml"),
-    {"db_password": "${vault:db#password}"},  # placeholder for secret
+    extract_placeholders(AppConfig),  # schema defaults with placeholders
+    toml_loader("config.toml"),       # base config file
+    env_loader(prefix="APP"),         # environment overrides
 )
 
 # Resolve secrets from Vault
-processor = VaultProcessor(
+vault = VaultProcessor(
     url="http://vault:8200",
     auth=TokenAuth(token="hvs.xxx"),
-    mount_path="secret",  # KV v2 secrets engine mount path
 )
-config = process(config, [processor])
-# {"db_password": "actual_password_from_vault", ...}
+config = process(config, [vault])
+
+# Validate
+app_config = AppConfig(**config)
 ```
 
 ## Loaders
@@ -143,14 +132,14 @@ ${processor:path#key|modifier:value}
 ```
 
 - `processor` — name of the processor (e.g., `vault`)
-- `path` — path to the secret
+- `path` — full API path to the secret (for Vault KV v2, include `{mount}/data/{secret_path}`)
 - `key` — (optional) specific key within the secret
 - `modifiers` — (optional) post-processing modifiers
 
 Placeholders can be embedded within strings:
 
 ```python
-config = {"dsn": "postgres://user:${vault:db#password}@localhost/db"}
+config = {"dsn": "postgres://user:${vault:secret/data/db#password}@localhost/db"}
 ```
 
 ### VaultProcessor
@@ -164,59 +153,49 @@ from justconf.processor import VaultProcessor, TokenAuth
 processor = VaultProcessor(
     url="http://vault:8200",
     auth=TokenAuth(token="hvs.xxx"),
-    mount_path="secret",  # KV v2 secrets engine mount path (required)
     timeout=30,           # request timeout in seconds
     verify=True,          # SSL verification (default: True)
 )
 
-config = {"api_key": "${vault:myapp/api#key}"}
+config = {"api_key": "${vault:secret/data/myapp/api#key}"}
 result = process(config, [processor])
 # {"api_key": "actual_key"}
 ```
 
-#### Understanding Mount Path
+#### Vault Path Structure
 
-The `mount_path` parameter specifies where the KV v2 secrets engine is mounted in Vault. This is a **required** parameter.
-
-**How to find your mount path:**
-
-- **Vault UI**: Go to Secrets → the engine name shown is your mount path
-- **Vault CLI**: Run `vault secrets list` to see all mounted engines
-
-**Path structure explained:**
+Specify the **full path** in the placeholder, exactly as it appears in the Vault HTTP API:
 
 ```
-Full Vault path:    secret/data/myapp/database
-                    ~~~~~~ ~~~~ ~~~~~~~~~~~~~~~
-                      │     │         │
-                      │     │         └── secret path (used in placeholder)
-                      │     └── KV v2 internal prefix (added automatically)
-                      └── mount_path (passed to VaultProcessor)
-
-Placeholder:        ${vault:myapp/database#password}
-                           ~~~~~~~~~~~~~~~
-                                  │
-                                  └── only the secret path, without mount_path
+Placeholder:        ${vault:secret/data/myapp/database#password}
+                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                                          │
+                                          └── full path as in Vault API
 ```
 
-**Examples with different mount paths:**
+**For KV v2**, the path format is `{mount}/data/{secret_path}`:
+- `secret/data/myapp` → mount=`secret`, secret=`myapp`
+- `team-kv/data/shared/db` → mount=`team-kv`, secret=`shared/db`
+
+**Benefits of this approach:**
+- Copy-paste from Vault UI or CLI works directly
+- Use secrets from different mount points in the same config
+- No hidden magic — the path is used as-is
+
+**Examples with different mount points:**
 
 ```python
-from justconf.processor import VaultProcessor, TokenAuth, KubernetesAuth
+config = {
+    "app_secret": "${vault:secret/data/myapp#password}",
+    "team_secret": "${vault:team-kv/data/shared/api#token}",
+    "infra_cert": "${vault:infra/data/tls/cert#value}",
+}
 
-# Default Vault dev server (mount path: "secret")
 processor = VaultProcessor(
-    url="http://localhost:8200",
-    auth=TokenAuth(token="root"),
-    mount_path="secret",
+    url="http://vault:8200",
+    auth=TokenAuth(token="hvs.xxx"),
 )
-
-# Custom mount path for a team
-processor = VaultProcessor(
-    url="https://vault.company.com:8200",
-    auth=KubernetesAuth(role="myapp"),
-    mount_path="team-backend/kv",
-)
+result = process(config, [processor])
 ```
 
 #### SSL Verification
@@ -232,7 +211,6 @@ The `verify` parameter controls SSL certificate verification:
 processor = VaultProcessor(
     url="https://vault.internal:8200",
     auth=TokenAuth(token="hvs.xxx"),
-    mount_path="secret",
     verify="/etc/ssl/certs/internal-ca.crt",
 )
 ```
@@ -261,7 +239,6 @@ processor = VaultProcessor(
         KubernetesAuth(role="myapp"),
         AppRoleAuth(role_id="xxx", secret_id="yyy"),
     ],
-    mount_path="secret",
 )
 ```
 
@@ -280,14 +257,12 @@ if auths:
     processor = VaultProcessor(
         url="http://vault:8200",
         auth=auths[0],
-        mount_path="secret",
     )
 
 # Or use fallback chain
 processor = VaultProcessor(
     url="http://vault:8200",
     auth=auths,  # VaultProcessor accepts list
-    mount_path="secret",
 )
 
 # Explicit method selection
@@ -310,8 +285,8 @@ Write secrets to files instead of keeping them in memory. Useful for certificate
 
 ```python
 config = {
-    "tls_cert": "${vault:tls#cert|file:/etc/ssl/cert.pem}",
-    "tls_key": "${vault:tls#key|file:/etc/ssl/key.pem|encoding:utf-8}",
+    "tls_cert": "${vault:secret/data/tls#cert|file:/etc/ssl/cert.pem}",
+    "tls_key": "${vault:secret/data/tls#key|file:/etc/ssl/key.pem|encoding:utf-8}",
 }
 
 result = process(config, [processor])
@@ -338,15 +313,15 @@ from justconf.schema import Placeholder, extract_placeholders
 class DatabaseConfig(BaseModel):
     host: str = "localhost"  # static default
     port: int = 5432
-    password: Annotated[str, Placeholder("${vault:db/creds#password}")]
+    password: Annotated[str, Placeholder("${vault:secret/data/db/creds#password}")]
 
 class AppConfig(BaseModel):
     database: DatabaseConfig
-    api_key: Annotated[str, Placeholder("${vault:api#key}")]
+    api_key: Annotated[str, Placeholder("${vault:secret/data/api#key}")]
 
 # Extract placeholders from schema
 schema_defaults = extract_placeholders(AppConfig)
-# {'database': {'password': '${vault:db/creds#password}'}, 'api_key': '${vault:api#key}'}
+# {'database': {'password': '${vault:secret/data/db/creds#password}'}, 'api_key': '${vault:secret/data/api#key}'}
 
 # Merge with priority: schema defaults < config file < environment
 config = merge(
@@ -372,13 +347,13 @@ from justconf.schema import Placeholder, extract_placeholders
 
 @dataclass
 class ServiceConfig:
-    api_key: Annotated[str, Placeholder("${vault:service#key}")]
+    api_key: Annotated[str, Placeholder("${vault:secret/data/service#key}")]
 
 # Plain classes work too
 class PlainConfig:
-    token: Annotated[str, Placeholder("${vault:auth#token}")]
+    token: Annotated[str, Placeholder("${vault:secret/data/auth#token}")]
 
-extract_placeholders(ServiceConfig)  # {'api_key': '${vault:service#key}'}
+extract_placeholders(ServiceConfig)  # {'api_key': '${vault:secret/data/service#key}'}
 ```
 
 ### Override Schema Placeholders
@@ -388,7 +363,7 @@ Schema placeholders have the lowest priority. Override them in config files or e
 ```toml
 # config.toml - overrides schema default
 [database]
-password = "${vault:staging/db#password}"
+password = "${vault:secret/data/staging/db#password}"
 ```
 
 ## Development

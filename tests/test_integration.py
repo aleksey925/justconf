@@ -141,10 +141,10 @@ DB__PORT=3306
         config = {
             'api': {
                 'key': '${api:keys/main#key}',
-                'secret': '${vault:secret/api#secret}',
+                'secret': '${vault:secret/data/api#secret}',
             },
             'db': {
-                'password': '${vault:secret/db#password}',
+                'password': '${vault:secret/data/db#password}',
             },
         }
 
@@ -152,8 +152,8 @@ DB__PORT=3306
         vault_processor = MockProcessor(
             'vault',
             {
-                'secret/api#secret': 'api_secret_456',
-                'secret/db#password': 'db_pass_789',
+                'secret/data/api#secret': 'api_secret_456',
+                'secret/data/db#password': 'db_pass_789',
             },
         )
 

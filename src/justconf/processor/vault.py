@@ -1,13 +1,14 @@
 import json
+import os
 import ssl
 import time
 import urllib.parse
 import urllib.request
 from abc import ABC, abstractmethod
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from http import HTTPStatus
-from typing import Any, cast
+from typing import Any, Literal, cast
 from urllib.error import HTTPError
 
 from justconf.exception import (
@@ -19,6 +20,17 @@ from justconf.processor.base import Processor
 
 DEFAULT_TIMEOUT = 30
 TOKEN_REFRESH_BUFFER_SECONDS = 30
+KUBERNETES_SA_TOKEN_PATH = '/var/run/secrets/kubernetes.io/serviceaccount/token'  # noqa: S105
+
+AuthMethod = Literal['token', 'approle', 'kubernetes', 'jwt', 'userpass']
+
+DEFAULT_AUTH_ORDER: tuple[AuthMethod, ...] = (
+    'approle',
+    'kubernetes',
+    'token',
+    'jwt',
+    'userpass',
+)
 
 
 def _create_ssl_context(verify: bool | str) -> ssl.SSLContext | None:
@@ -204,7 +216,7 @@ class KubernetesAuth(VaultAuth):
         self,
         role: str,
         jwt: str | None = None,
-        jwt_path: str = '/var/run/secrets/kubernetes.io/serviceaccount/token',
+        jwt_path: str = KUBERNETES_SA_TOKEN_PATH,
         mount_path: str = 'kubernetes',
     ):
         self.role = role
@@ -294,7 +306,14 @@ class UserpassAuth(VaultAuth):
 
 
 class VaultProcessor(Processor):
-    """Processor for HashiCorp Vault secrets (KV v2)."""
+    """Processor for HashiCorp Vault secrets (KV v2).
+
+    Uses full paths in placeholders: {mount}/data/{secret_path}.
+
+    Example placeholders:
+        ${vault:secret/data/myapp#password}  # KV v2 at 'secret' mount
+        ${vault:kv/data/db#user}             # KV v2 at 'kv' mount
+    """
 
     name = 'vault'
 
@@ -302,7 +321,6 @@ class VaultProcessor(Processor):
         self,
         url: str,
         auth: VaultAuth | list[VaultAuth],
-        mount_path: str,
         timeout: int = 30,
         verify: bool | str = True,
     ):
@@ -311,7 +329,6 @@ class VaultProcessor(Processor):
         Args:
             url: Base URL of the Vault server.
             auth: Authentication method or list of methods (fallback chain).
-            mount_path: KV v2 mount path.
             timeout: Request timeout in seconds.
             verify: SSL certificate verification. True (default) uses system CA,
                     False disables verification, or path to CA bundle file.
@@ -327,7 +344,6 @@ class VaultProcessor(Processor):
 
         self.url = url.rstrip('/')
         self.auth_methods = auth if isinstance(auth, list) else [auth]
-        self.mount_path = mount_path
         self.timeout = timeout
         self._ssl_context = _create_ssl_context(verify)
 
@@ -365,7 +381,7 @@ class VaultProcessor(Processor):
     def _do_request(self, path: str, token: str) -> dict[str, Any]:
         """Make request to Vault."""
         req = urllib.request.Request(
-            f'{self.url}/v1/{self.mount_path}/data/{path}',
+            f'{self.url}/v1/{path}',
             headers={'X-Vault-Token': token},
         )
         try:
@@ -422,3 +438,93 @@ class VaultProcessor(Processor):
             yield
         finally:
             self._secrets_cache = None
+
+
+def _detect_token_auth() -> TokenAuth | None:
+    """Detect TokenAuth from VAULT_TOKEN environment variable."""
+    token = os.environ.get('VAULT_TOKEN')
+    return TokenAuth(token=token) if token else None
+
+
+def _detect_approle_auth() -> AppRoleAuth | None:
+    """Detect AppRoleAuth from VAULT_ROLE_ID and VAULT_SECRET_ID environment variables."""
+    role_id = os.environ.get('VAULT_ROLE_ID')
+    secret_id = os.environ.get('VAULT_SECRET_ID')
+    if role_id and secret_id:
+        return AppRoleAuth(
+            role_id=role_id,
+            secret_id=secret_id,
+            mount_path=os.environ.get('VAULT_APPROLE_MOUNT_PATH', 'approle'),
+        )
+    return None
+
+
+def _detect_kubernetes_auth() -> KubernetesAuth | None:
+    """Detect KubernetesAuth from VAULT_KUBERNETES_ROLE environment variable."""
+    role = os.environ.get('VAULT_KUBERNETES_ROLE')
+    if role:
+        return KubernetesAuth(
+            role=role,
+            mount_path=os.environ.get('VAULT_KUBERNETES_MOUNT_PATH', 'kubernetes'),
+        )
+    return None
+
+
+def _detect_jwt_auth() -> JwtAuth | None:
+    """Detect JwtAuth from VAULT_JWT_ROLE and VAULT_JWT_TOKEN environment variables."""
+    role = os.environ.get('VAULT_JWT_ROLE')
+    jwt = os.environ.get('VAULT_JWT_TOKEN')
+    if role and jwt:
+        return JwtAuth(
+            role=role,
+            jwt=jwt,
+            mount_path=os.environ.get('VAULT_JWT_MOUNT_PATH', 'jwt'),
+        )
+    return None
+
+
+def _detect_userpass_auth() -> UserpassAuth | None:
+    """Detect UserpassAuth from VAULT_USERNAME and VAULT_PASSWORD environment variables."""
+    username = os.environ.get('VAULT_USERNAME')
+    password = os.environ.get('VAULT_PASSWORD')
+    if username and password:
+        return UserpassAuth(
+            username=username,
+            password=password,
+            mount_path=os.environ.get('VAULT_USERPASS_MOUNT_PATH', 'userpass'),
+        )
+    return None
+
+
+_DETECTORS: dict[AuthMethod, Callable[[], VaultAuth | None]] = {
+    'token': _detect_token_auth,
+    'approle': _detect_approle_auth,
+    'kubernetes': _detect_kubernetes_auth,
+    'jwt': _detect_jwt_auth,
+    'userpass': _detect_userpass_auth,
+}
+
+
+def vault_auth_from_env(
+    method: AuthMethod | None = None,
+) -> list[VaultAuth]:
+    """Detect Vault credentials from environment variables.
+
+    Args:
+        method: If specified, only check for this auth method.
+                If None, check all methods and return sorted by priority.
+
+    Returns:
+        List of VaultAuth instances (possibly empty), sorted by priority.
+    """
+    if method is not None:
+        detector = _DETECTORS[method]
+        auth = detector()
+        return [auth] if auth else []
+
+    result = []
+    for method_name in DEFAULT_AUTH_ORDER:
+        auth = _DETECTORS[method_name]()
+        if auth is not None:
+            result.append(auth)
+    return result

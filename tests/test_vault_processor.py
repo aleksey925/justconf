@@ -14,8 +14,16 @@ from justconf.processor import (
     TokenAuth,
     UserpassAuth,
     VaultProcessor,
+    vault_auth_from_env,
 )
-from justconf.processor.vault import _create_ssl_context
+from justconf.processor.vault import (
+    _create_ssl_context,
+    _detect_approle_auth,
+    _detect_jwt_auth,
+    _detect_kubernetes_auth,
+    _detect_token_auth,
+    _detect_userpass_auth,
+)
 
 
 class TestTokenAuth:
@@ -341,7 +349,6 @@ class TestVaultProcessor:
             VaultProcessor(
                 url='ftp://vault:8200',
                 auth=TokenAuth(token='test'),
-                mount_path='secret',
             )
 
     def test_init__missing_host__raises_error(self):
@@ -350,7 +357,6 @@ class TestVaultProcessor:
             VaultProcessor(
                 url='http://',
                 auth=TokenAuth(token='test'),
-                mount_path='secret',
             )
 
     def test_init__url_trailing_slash__stripped(self):
@@ -358,18 +364,16 @@ class TestVaultProcessor:
         processor = VaultProcessor(
             url='http://vault:8200/',
             auth=TokenAuth(token='test'),
-            mount_path='secret',
         )
 
         # assert
         assert processor.url == 'http://vault:8200'
 
-    def test_init__custom_mount_path__used_in_requests(self):
+    def test_init__full_path_used_in_requests(self):
         # arrange
         processor = VaultProcessor(
             url='http://vault:8200',
             auth=TokenAuth(token='test_token'),
-            mount_path='kv',
         )
         mock_token_response = {'data': {'ttl': 3600}}
         mock_secret_response = {'data': {'data': {'key': 'value'}}}
@@ -380,14 +384,14 @@ class TestVaultProcessor:
             if 'lookup-self' in url:
                 mock.__enter__.return_value.read.return_value = json.dumps(mock_token_response).encode()
             else:
-                # verify custom mount path is used
-                assert '/v1/kv/data/' in url
+                # verify full path is used as-is
+                assert '/v1/kv/data/secret/test' in url
                 mock.__enter__.return_value.read.return_value = json.dumps(mock_secret_response).encode()
             return mock
 
         # act
         with patch('urllib.request.urlopen', side_effect=side_effect):
-            result = processor.resolve('secret/test', 'key')
+            result = processor.resolve('kv/data/secret/test', 'key')
 
         # assert
         assert result == 'value'
@@ -397,7 +401,6 @@ class TestVaultProcessor:
         processor = VaultProcessor(
             url='http://vault:8200',
             auth=TokenAuth(token='test'),
-            mount_path='secret',
             timeout=60,
         )
 
@@ -418,7 +421,7 @@ class TestVaultProcessor:
             mock_urlopen.return_value.__enter__.return_value.read.return_value = json.dumps(
                 mock_secret_response
             ).encode()
-            result = processor.resolve('secret/db', 'password')
+            result = processor.resolve('secret/data/db', 'password')
 
         # assert
         assert result == 'secret123'
@@ -437,7 +440,7 @@ class TestVaultProcessor:
             mock_urlopen.return_value.__enter__.return_value.read.return_value = json.dumps(
                 mock_secret_response
             ).encode()
-            result = processor.resolve('secret/db')
+            result = processor.resolve('secret/data/db')
 
         # assert
         assert result == {'user': 'admin', 'pass': 'secret'}
@@ -457,7 +460,7 @@ class TestVaultProcessor:
         # act & assert
         with patch('urllib.request.urlopen', side_effect=side_effect):
             with pytest.raises(SecretNotFoundError, match='Secret not found'):
-                processor.resolve('secret/nonexistent', 'key')
+                processor.resolve('secret/data/nonexistent', 'key')
 
     def test_resolve__key_not_found__raises_error(self):
         # arrange
@@ -474,7 +477,7 @@ class TestVaultProcessor:
                 mock_secret_response
             ).encode()
             with pytest.raises(SecretNotFoundError, match="Key 'password' not found"):
-                processor.resolve('secret/db', 'password')
+                processor.resolve('secret/data/db', 'password')
 
     def test_resolve__path_with_trailing_slash__normalized(self):
         # arrange
@@ -486,7 +489,7 @@ class TestVaultProcessor:
             mock_urlopen.return_value.__enter__.return_value.read.return_value = json.dumps(
                 mock_secret_response
             ).encode()
-            result = processor.resolve('database/', 'password')
+            result = processor.resolve('secret/data/database/', 'password')
 
             # assert
             call_args = mock_urlopen.call_args[0][0]
@@ -504,12 +507,12 @@ class TestVaultProcessor:
             mock_urlopen.return_value.__enter__.return_value.read.return_value = json.dumps(
                 mock_secret_response
             ).encode()
-            result = processor.resolve('/database', 'password')
+            result = processor.resolve('/secret/data/database', 'password')
 
             # assert
             call_args = mock_urlopen.call_args[0][0]
             assert '/v1/secret/data/database' in call_args.full_url
-            assert '//database' not in call_args.full_url
+            assert '//secret' not in call_args.full_url
             assert result == 'secret123'
 
     def test_resolve__path_with_both_slashes__normalized(self):
@@ -522,7 +525,7 @@ class TestVaultProcessor:
             mock_urlopen.return_value.__enter__.return_value.read.return_value = json.dumps(
                 mock_secret_response
             ).encode()
-            result = processor.resolve('/database/', 'password')
+            result = processor.resolve('/secret/data/database/', 'password')
 
             # assert
             call_args = mock_urlopen.call_args[0][0]
@@ -547,9 +550,9 @@ class TestVaultProcessor:
         # act
         with patch('urllib.request.urlopen', side_effect=mock_urlopen_side_effect):
             with processor.caching():
-                processor.resolve('secret/db', 'password')
-                processor.resolve('secret/db', 'password')
-                processor.resolve('secret/db', 'password')
+                processor.resolve('secret/data/db', 'password')
+                processor.resolve('secret/data/db', 'password')
+                processor.resolve('secret/data/db', 'password')
 
         # assert (1 auth call + 1 secret call = 2, not 4)
         assert call_count == 2
@@ -561,7 +564,6 @@ class TestVaultProcessor:
         processor = VaultProcessor(
             url='http://vault:8200',
             auth=[failing_auth, succeeding_auth],
-            mount_path='secret',
         )
 
         mock_token_response = {'data': {'ttl': 3600}}
@@ -585,7 +587,7 @@ class TestVaultProcessor:
                 return mock
 
             mock_urlopen.side_effect = side_effect
-            result = processor.resolve('secret/test', 'key')
+            result = processor.resolve('secret/data/test', 'key')
 
         # assert
         assert result == 'value'
@@ -598,12 +600,11 @@ class TestVaultProcessor:
                 TokenAuth(token=''),
                 AppRoleAuth(role_id='', secret_id=''),
             ],
-            mount_path='secret',
         )
 
         # act & assert
         with pytest.raises(NoValidAuthError, match='All authentication methods failed'):
-            processor.resolve('secret/test', 'key')
+            processor.resolve('secret/data/test', 'key')
 
     def test_token_caching__reuses_token_within_ttl(self):
         # arrange
@@ -624,9 +625,9 @@ class TestVaultProcessor:
 
         # act
         with patch('urllib.request.urlopen', side_effect=side_effect):
-            processor.resolve('secret/a', 'key')
-            processor.resolve('secret/b', 'key')
-            processor.resolve('secret/c', 'key')
+            processor.resolve('secret/data/a', 'key')
+            processor.resolve('secret/data/b', 'key')
+            processor.resolve('secret/data/c', 'key')
 
         # assert (only 1 auth call, not 3)
         assert auth_call_count == 1
@@ -636,7 +637,6 @@ class TestVaultProcessor:
         processor = VaultProcessor(
             url='https://vault:8200',
             auth=TokenAuth(token='test'),
-            mount_path='secret',
             verify=False,
         )
 
@@ -654,7 +654,6 @@ class TestVaultProcessor:
             processor = VaultProcessor(
                 url='https://vault:8200',
                 auth=TokenAuth(token='test'),
-                mount_path='secret',
                 verify='/path/to/ca.crt',
             )
 
@@ -668,7 +667,6 @@ class TestVaultProcessor:
             VaultProcessor(
                 url='https://vault:8200',
                 auth=TokenAuth(token='test'),
-                mount_path='secret',
                 verify='/nonexistent/ca.crt',
             )
 
@@ -677,7 +675,6 @@ class TestVaultProcessor:
         processor = VaultProcessor(
             url='https://vault:8200',
             auth=TokenAuth(token='test'),
-            mount_path='secret',
             verify=False,
         )
         mock_response = {'data': {'data': {'key': 'value'}}}
@@ -693,7 +690,7 @@ class TestVaultProcessor:
 
         # act
         with patch('urllib.request.urlopen', side_effect=side_effect) as mock_urlopen:
-            processor.resolve('secret/test', 'key')
+            processor.resolve('secret/data/test', 'key')
 
             # assert
             for call in mock_urlopen.call_args_list:
@@ -723,7 +720,7 @@ class TestVaultProcessor:
 
         # act
         with patch('urllib.request.urlopen', side_effect=side_effect):
-            result = processor.resolve('secret/test', 'key')
+            result = processor.resolve('secret/data/test', 'key')
 
         # assert
         assert result == 'value'
@@ -739,7 +736,6 @@ class TestVaultProcessor:
         processor = VaultProcessor(
             url='http://vault:8200',
             auth=[auth1, auth2, auth3],
-            mount_path='secret',
         )
 
         mock_token_response = {'data': {'ttl': 3600}}
@@ -756,7 +752,7 @@ class TestVaultProcessor:
 
         # act
         with patch('urllib.request.urlopen', side_effect=side_effect):
-            result = processor.resolve('secret/test', 'key')
+            result = processor.resolve('secret/data/test', 'key')
 
         # assert
         assert result == 'value'
@@ -781,9 +777,9 @@ class TestVaultProcessor:
 
         # act (without caching context)
         with patch('urllib.request.urlopen', side_effect=mock_urlopen_side_effect):
-            processor.resolve('secret/db', 'password')
-            processor.resolve('secret/db', 'password')
-            processor.resolve('secret/db', 'password')
+            processor.resolve('secret/data/db', 'password')
+            processor.resolve('secret/data/db', 'password')
+            processor.resolve('secret/data/db', 'password')
 
         # assert (each call fetches secret)
         assert call_count == 3
@@ -793,7 +789,6 @@ class TestVaultProcessor:
         processor = VaultProcessor(
             url='http://vault:8200',
             auth=TokenAuth(token='test'),
-            mount_path='secret',
         )
 
         # assert
@@ -835,6 +830,310 @@ class TestCreateSslContext:
             _create_ssl_context('/nonexistent/ca.crt')
 
 
+class TestDetectTokenAuth:
+    def test_token_present__returns_token_auth(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('VAULT_TOKEN', 'hvs.test_token')
+
+        # act
+        result = _detect_token_auth()
+
+        # assert
+        assert isinstance(result, TokenAuth)
+        assert result.token == 'hvs.test_token'
+
+    def test_token_absent__returns_none(self, monkeypatch):
+        # arrange
+        monkeypatch.delenv('VAULT_TOKEN', raising=False)
+
+        # act
+        result = _detect_token_auth()
+
+        # assert
+        assert result is None
+
+
+class TestDetectAppRoleAuth:
+    def test_both_credentials_present__returns_approle_auth(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('VAULT_ROLE_ID', 'role123')
+        monkeypatch.setenv('VAULT_SECRET_ID', 'secret456')
+
+        # act
+        result = _detect_approle_auth()
+
+        # assert
+        assert isinstance(result, AppRoleAuth)
+        assert result.role_id == 'role123'
+        assert result.secret_id == 'secret456'
+        assert result.mount_path == 'approle'
+
+    def test_custom_mount_path__uses_env_value(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('VAULT_ROLE_ID', 'role123')
+        monkeypatch.setenv('VAULT_SECRET_ID', 'secret456')
+        monkeypatch.setenv('VAULT_APPROLE_MOUNT_PATH', 'custom-approle')
+
+        # act
+        result = _detect_approle_auth()
+
+        # assert
+        assert result.mount_path == 'custom-approle'
+
+    def test_only_role_id__returns_none(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('VAULT_ROLE_ID', 'role123')
+        monkeypatch.delenv('VAULT_SECRET_ID', raising=False)
+
+        # act
+        result = _detect_approle_auth()
+
+        # assert
+        assert result is None
+
+    def test_only_secret_id__returns_none(self, monkeypatch):
+        # arrange
+        monkeypatch.delenv('VAULT_ROLE_ID', raising=False)
+        monkeypatch.setenv('VAULT_SECRET_ID', 'secret456')
+
+        # act
+        result = _detect_approle_auth()
+
+        # assert
+        assert result is None
+
+
+class TestDetectKubernetesAuth:
+    def test_role_present__returns_kubernetes_auth(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('VAULT_KUBERNETES_ROLE', 'myapp')
+
+        # act
+        result = _detect_kubernetes_auth()
+
+        # assert
+        assert isinstance(result, KubernetesAuth)
+        assert result.role == 'myapp'
+        assert result.mount_path == 'kubernetes'
+
+    def test_custom_mount_path__uses_env_value(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('VAULT_KUBERNETES_ROLE', 'myapp')
+        monkeypatch.setenv('VAULT_KUBERNETES_MOUNT_PATH', 'k8s-cluster')
+
+        # act
+        result = _detect_kubernetes_auth()
+
+        # assert
+        assert result.mount_path == 'k8s-cluster'
+
+    def test_no_role__returns_none(self, monkeypatch):
+        # arrange
+        monkeypatch.delenv('VAULT_KUBERNETES_ROLE', raising=False)
+
+        # act
+        result = _detect_kubernetes_auth()
+
+        # assert
+        assert result is None
+
+
+class TestDetectJwtAuth:
+    def test_both_credentials_present__returns_jwt_auth(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('VAULT_JWT_ROLE', 'myproject')
+        monkeypatch.setenv('VAULT_JWT_TOKEN', 'eyJ...')
+
+        # act
+        result = _detect_jwt_auth()
+
+        # assert
+        assert isinstance(result, JwtAuth)
+        assert result.role == 'myproject'
+        assert result.jwt == 'eyJ...'
+        assert result.mount_path == 'jwt'
+
+    def test_custom_mount_path__uses_env_value(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('VAULT_JWT_ROLE', 'myproject')
+        monkeypatch.setenv('VAULT_JWT_TOKEN', 'eyJ...')
+        monkeypatch.setenv('VAULT_JWT_MOUNT_PATH', 'oidc')
+
+        # act
+        result = _detect_jwt_auth()
+
+        # assert
+        assert result.mount_path == 'oidc'
+
+    def test_only_role__returns_none(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('VAULT_JWT_ROLE', 'myproject')
+        monkeypatch.delenv('VAULT_JWT_TOKEN', raising=False)
+
+        # act
+        result = _detect_jwt_auth()
+
+        # assert
+        assert result is None
+
+    def test_only_jwt__returns_none(self, monkeypatch):
+        # arrange
+        monkeypatch.delenv('VAULT_JWT_ROLE', raising=False)
+        monkeypatch.setenv('VAULT_JWT_TOKEN', 'eyJ...')
+
+        # act
+        result = _detect_jwt_auth()
+
+        # assert
+        assert result is None
+
+
+class TestDetectUserpassAuth:
+    def test_both_credentials_present__returns_userpass_auth(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('VAULT_USERNAME', 'admin')
+        monkeypatch.setenv('VAULT_PASSWORD', 'secret')
+
+        # act
+        result = _detect_userpass_auth()
+
+        # assert
+        assert isinstance(result, UserpassAuth)
+        assert result.username == 'admin'
+        assert result.password == 'secret'
+        assert result.mount_path == 'userpass'
+
+    def test_custom_mount_path__uses_env_value(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('VAULT_USERNAME', 'admin')
+        monkeypatch.setenv('VAULT_PASSWORD', 'secret')
+        monkeypatch.setenv('VAULT_USERPASS_MOUNT_PATH', 'ldap')
+
+        # act
+        result = _detect_userpass_auth()
+
+        # assert
+        assert result.mount_path == 'ldap'
+
+    def test_only_username__returns_none(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('VAULT_USERNAME', 'admin')
+        monkeypatch.delenv('VAULT_PASSWORD', raising=False)
+
+        # act
+        result = _detect_userpass_auth()
+
+        # assert
+        assert result is None
+
+    def test_only_password__returns_none(self, monkeypatch):
+        # arrange
+        monkeypatch.delenv('VAULT_USERNAME', raising=False)
+        monkeypatch.setenv('VAULT_PASSWORD', 'secret')
+
+        # act
+        result = _detect_userpass_auth()
+
+        # assert
+        assert result is None
+
+
+class TestVaultAuthFromEnv:
+    def test_no_credentials__returns_empty_list(self, monkeypatch):
+        # arrange
+        monkeypatch.delenv('VAULT_TOKEN', raising=False)
+        monkeypatch.delenv('VAULT_ROLE_ID', raising=False)
+        monkeypatch.delenv('VAULT_SECRET_ID', raising=False)
+        monkeypatch.delenv('VAULT_KUBERNETES_ROLE', raising=False)
+        monkeypatch.delenv('VAULT_JWT_ROLE', raising=False)
+        monkeypatch.delenv('VAULT_JWT_TOKEN', raising=False)
+        monkeypatch.delenv('VAULT_USERNAME', raising=False)
+        monkeypatch.delenv('VAULT_PASSWORD', raising=False)
+
+        # act
+        result = vault_auth_from_env()
+
+        # assert
+        assert result == []
+
+    def test_multiple_credentials__returns_sorted_by_priority(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('VAULT_USERNAME', 'admin')
+        monkeypatch.setenv('VAULT_PASSWORD', 'secret')
+        monkeypatch.setenv('VAULT_TOKEN', 'hvs.xxx')
+        monkeypatch.delenv('VAULT_ROLE_ID', raising=False)
+        monkeypatch.delenv('VAULT_SECRET_ID', raising=False)
+        monkeypatch.delenv('VAULT_KUBERNETES_ROLE', raising=False)
+        monkeypatch.delenv('VAULT_JWT_ROLE', raising=False)
+        monkeypatch.delenv('VAULT_JWT_TOKEN', raising=False)
+
+        # act
+        result = vault_auth_from_env()
+
+        # assert
+        assert len(result) == 2
+        assert isinstance(result[0], TokenAuth)
+        assert isinstance(result[1], UserpassAuth)
+
+    def test_method_token__only_checks_token(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('VAULT_TOKEN', 'hvs.xxx')
+        monkeypatch.setenv('VAULT_USERNAME', 'admin')
+        monkeypatch.setenv('VAULT_PASSWORD', 'secret')
+
+        # act
+        result = vault_auth_from_env(method='token')
+
+        # assert
+        assert len(result) == 1
+        assert isinstance(result[0], TokenAuth)
+
+    def test_method_approle__only_checks_approle(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('VAULT_TOKEN', 'hvs.xxx')
+        monkeypatch.setenv('VAULT_ROLE_ID', 'role123')
+        monkeypatch.setenv('VAULT_SECRET_ID', 'secret456')
+
+        # act
+        result = vault_auth_from_env(method='approle')
+
+        # assert
+        assert len(result) == 1
+        assert isinstance(result[0], AppRoleAuth)
+
+    def test_method_not_found__returns_empty_list(self, monkeypatch):
+        # arrange
+        monkeypatch.delenv('VAULT_TOKEN', raising=False)
+
+        # act
+        result = vault_auth_from_env(method='token')
+
+        # assert
+        assert result == []
+
+    def test_all_methods_available__returns_in_priority_order(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('VAULT_TOKEN', 'hvs.xxx')
+        monkeypatch.setenv('VAULT_ROLE_ID', 'role123')
+        monkeypatch.setenv('VAULT_SECRET_ID', 'secret456')
+        monkeypatch.setenv('VAULT_KUBERNETES_ROLE', 'myapp')
+        monkeypatch.setenv('VAULT_JWT_ROLE', 'myproject')
+        monkeypatch.setenv('VAULT_JWT_TOKEN', 'eyJ...')
+        monkeypatch.setenv('VAULT_USERNAME', 'admin')
+        monkeypatch.setenv('VAULT_PASSWORD', 'secret')
+
+        # act
+        result = vault_auth_from_env()
+
+        # assert (order: approle, kubernetes, token, jwt, userpass)
+        assert len(result) == 5
+        assert isinstance(result[0], AppRoleAuth)
+        assert isinstance(result[1], KubernetesAuth)
+        assert isinstance(result[2], TokenAuth)
+        assert isinstance(result[3], JwtAuth)
+        assert isinstance(result[4], UserpassAuth)
+
+
 # fixtures and helpers
 
 
@@ -842,7 +1141,6 @@ def create_processor_with_mock_auth():
     return VaultProcessor(
         url='http://vault:8200',
         auth=TokenAuth(token='test_token'),
-        mount_path='secret',
     )
 
 

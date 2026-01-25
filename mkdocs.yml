@@ -11,6 +11,7 @@ theme:
   sidebar: false
   header_nav: false
   toc_position: left
+  tagline: just configure it
 
 plugins:
   - search

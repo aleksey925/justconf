@@ -6,21 +6,21 @@
     <meta name="description" content="{{ config.site_description }}">
     {% if config.site_author %}<meta name="author" content="{{ config.site_author }}">{% endif %}
 
-    <title>{% if page.is_homepage %}{{ config.site_name }} — just configure it{% elif page.title %}{{ page.title }} - {{ config.site_name }}{% else %}{{ config.site_name }}{% endif %}</title>
+    <title>{% if page.is_homepage %}{{ config.site_name }}{% if config.theme.tagline %} — {{ config.theme.tagline }}{% endif %}{% elif page.title %}{{ page.title }} - {{ config.site_name }}{% else %}{{ config.site_name }}{% endif %}</title>
 
     <!-- Canonical URL -->
     <link rel="canonical" href="{{ config.site_url }}{{ page.url }}">
 
     <!-- Open Graph -->
     <meta property="og:type" content="{% if page.is_homepage %}website{% else %}article{% endif %}">
-    <meta property="og:title" content="{% if page.is_homepage %}{{ config.site_name }} — just configure it{% elif page.title %}{{ page.title }}{% else %}{{ config.site_name }}{% endif %}">
+    <meta property="og:title" content="{% if page.is_homepage %}{{ config.site_name }}{% if config.theme.tagline %} — {{ config.theme.tagline }}{% endif %}{% elif page.title %}{{ page.title }}{% else %}{{ config.site_name }}{% endif %}">
     <meta property="og:description" content="{{ config.site_description }}">
     <meta property="og:url" content="{{ config.site_url }}{{ page.url }}">
     <meta property="og:site_name" content="{{ config.site_name }}">
 
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary">
-    <meta name="twitter:title" content="{% if page.is_homepage %}{{ config.site_name }} — just configure it{% elif page.title %}{{ page.title }}{% else %}{{ config.site_name }}{% endif %}">
+    <meta name="twitter:title" content="{% if page.is_homepage %}{{ config.site_name }}{% if config.theme.tagline %} — {{ config.theme.tagline }}{% endif %}{% elif page.title %}{{ page.title }}{% else %}{{ config.site_name }}{% endif %}">
     <meta name="twitter:description" content="{{ config.site_description }}">
 
     <!-- Favicon -->

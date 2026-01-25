@@ -25,6 +25,7 @@ Schema-agnostic: use your preferred validation library (Pydantic, msgspec, datac
 - [Merge](#merge)
 - [Processors](#processors)
 - [Schema Placeholders](#schema-placeholders)
+- [Development](#development)
 - [License](#license)
 
 ## Installation

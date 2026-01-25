@@ -28,10 +28,10 @@ publish:
 
 .PHONY: docs
 docs:
-	python scripts/gen_docs.py
+	uv run python scripts/gen_docs.py
 	uv run mkdocs build --strict
 
 .PHONY: docs-serve
 docs-serve:
-	python scripts/gen_docs.py
+	uv run python scripts/gen_docs.py
 	uv run mkdocs serve

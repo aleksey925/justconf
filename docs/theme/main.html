@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="{{ config.theme.locale | default('en') }}" data-theme="light">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="{{ config.site_description }}">
+    {% if config.site_author %}<meta name="author" content="{{ config.site_author }}">{% endif %}
+
+    <title>{% if page.is_homepage %}{{ config.site_name }}{% if config.theme.tagline %} — {{ config.theme.tagline }}{% endif %}{% elif page.title %}{{ page.title }} - {{ config.site_name }}{% else %}{{ config.site_name }}{% endif %}</title>
+
+    <!-- Canonical URL -->
+    <link rel="canonical" href="{{ config.site_url }}{{ page.url }}">
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="{% if page.is_homepage %}website{% else %}article{% endif %}">
+    <meta property="og:title" content="{% if page.is_homepage %}{{ config.site_name }}{% if config.theme.tagline %} — {{ config.theme.tagline }}{% endif %}{% elif page.title %}{{ page.title }}{% else %}{{ config.site_name }}{% endif %}">
+    <meta property="og:description" content="{{ config.site_description }}">
+    <meta property="og:url" content="{{ config.site_url }}{{ page.url }}">
+    <meta property="og:site_name" content="{{ config.site_name }}">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="{% if page.is_homepage %}{{ config.site_name }}{% if config.theme.tagline %} — {{ config.theme.tagline }}{% endif %}{% elif page.title %}{{ page.title }}{% else %}{{ config.site_name }}{% endif %}">
+    <meta name="twitter:description" content="{{ config.site_description }}">
+
+    <!-- Favicon -->
+    {% if config.theme.favicon %}
+    <link rel="icon" href="{{ config.theme.favicon | url }}">
+    {% endif %}
+
+    <!-- Preconnect for fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+    <!-- Fonts: Clean, Apple-like system fonts with elegant fallbacks -->
+    <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+    <!-- Theme Styles -->
+    <link rel="stylesheet" href="{{ 'css/pristine.css' | url }}">
+    <link rel="stylesheet" href="{{ 'css/syntax.css' | url }}">
+
+    {% for path in config.extra_css %}
+    <link rel="stylesheet" href="{{ path | url }}">
+    {% endfor %}
+
+    {% block extrahead %}{% endblock %}
+</head>
+
+<body class="
+    {%- if not config.theme.sidebar | default(true) %} no-sidebar{% endif %}
+    {%- if not config.theme.toc | default(true) %} no-toc{% endif %}
+    {%- if config.theme.toc_position == 'left' %} toc-left{% endif %}
+    {%- if not config.theme.sidebar | default(true) and not config.theme.header_nav | default(true) and not config.theme.toc | default(true) %} no-mobile-menu{% endif %}
+">
+    <!-- Skip to content for accessibility -->
+    <a href="#main-content" class="skip-link">Skip to content</a>
+
+    <!-- Header -->
+    <header class="site-header">
+        <div class="header-container">
+            <a href="{{ config.site_url | default(nav.homepage.url, true) | url }}" class="logo">
+                {% if config.theme.logo %}
+                <img src="{{ config.theme.logo | url }}" alt="{{ config.site_name }}">
+                {% else %}
+                <span class="logo-text">{{ config.site_name }}</span>
+                {% endif %}
+            </a>
+
+            {% if config.theme.header_nav | default(true) %}
+            <nav class="header-nav">
+                {% if nav %}
+                {% for nav_item in nav %}
+                {% if nav_item.children %}
+                <div class="nav-dropdown">
+                    <button class="nav-link dropdown-trigger">
+                        {{ nav_item.title }}
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="6 9 12 15 18 9"/>
+                        </svg>
+                    </button>
+                    <div class="dropdown-content">
+                        {% for child in nav_item.children %}
+                        <a href="{{ child.url | url }}" class="dropdown-item{% if child.active %} active{% endif %}">
+                            {{ child.title }}
+                        </a>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% else %}
+                <a href="{{ nav_item.url | url }}" class="nav-link{% if nav_item.active %} active{% endif %}">
+                    {{ nav_item.title }}
+                </a>
+                {% endif %}
+                {% endfor %}
+                {% endif %}
+            </nav>
+            {% endif %}
+
+            <div class="header-right">
+                <!-- Search -->
+                {% if 'search' in config.plugins %}
+                <button class="search-trigger" id="search-trigger" aria-label="Search">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"/>
+                        <path d="M21 21l-4.35-4.35"/>
+                    </svg>
+                    <span class="search-shortcut">⌘K</span>
+                </button>
+                {% endif %}
+
+                <!-- Theme Toggle -->
+                <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
+                    <svg class="sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="5"/>
+                        <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+                    </svg>
+                    <svg class="moon-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                    </svg>
+                </button>
+
+                <!-- Mobile Menu Toggle -->
+                <button class="mobile-menu-toggle" id="mobile-toggle" aria-label="Toggle menu">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Search Modal -->
+    {% if 'search' in config.plugins %}
+    <div class="search-modal" id="search-modal">
+        <div class="search-modal-backdrop"></div>
+        <div class="search-modal-content">
+            <div class="search-input-wrapper">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"/>
+                    <path d="M21 21l-4.35-4.35"/>
+                </svg>
+                <input type="search" id="search-input" placeholder="Search documentation..." autocomplete="off">
+                <kbd class="search-esc">Esc</kbd>
+            </div>
+            <div class="search-results" id="search-results"></div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Mobile Navigation -->
+    <aside class="mobile-nav" id="mobile-nav">
+        <div class="mobile-nav-content">
+            {% set show_mobile_nav = config.theme.sidebar | default(true) or config.theme.header_nav | default(true) %}
+            {% if show_mobile_nav and nav %}
+            {% for nav_item in nav %}
+            {% if nav_item.children %}
+            <div class="mobile-nav-section">
+                <span class="mobile-nav-title">{{ nav_item.title }}</span>
+                {% for child in nav_item.children %}
+                <a href="{{ child.url | url }}" class="mobile-nav-link{% if child.active %} active{% endif %}">
+                    {{ child.title }}
+                </a>
+                {% endfor %}
+            </div>
+            {% else %}
+            <a href="{{ nav_item.url | url }}" class="mobile-nav-link{% if nav_item.active %} active{% endif %}">
+                {{ nav_item.title }}
+            </a>
+            {% endif %}
+            {% endfor %}
+            {% elif config.theme.toc | default(true) and page.toc %}
+            <!-- Show TOC in mobile menu when sidebar/header_nav are disabled -->
+            <div class="mobile-nav-section mobile-nav-toc">
+                <span class="mobile-nav-title">On this page</span>
+                {% for toc_item in page.toc %}
+                <a href="{{ toc_item.url }}" class="mobile-nav-link">{{ toc_item.title }}</a>
+                {% if toc_item.children %}
+                {% for toc_child in toc_item.children %}
+                <a href="{{ toc_child.url }}" class="mobile-nav-link mobile-nav-link-nested">{{ toc_child.title }}</a>
+                {% endfor %}
+                {% endif %}
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+    </aside>
+
+    <!-- Main Layout -->
+    <div class="main-layout">
+        <!-- Sidebar Navigation -->
+        {% if config.theme.sidebar | default(true) %}
+        <aside class="sidebar">
+            <nav class="sidebar-nav">
+                {% if nav %}
+                {% for nav_item in nav %}
+                <div class="sidebar-section">
+                    {% if nav_item.children %}
+                    <span class="sidebar-title">{{ nav_item.title }}</span>
+                    <ul class="sidebar-list">
+                        {% for child in nav_item.children recursive %}
+                        <li>
+                            <a href="{{ child.url | url }}" class="sidebar-link{% if child.active %} active{% endif %}">
+                                {{ child.title }}
+                            </a>
+                            {% if child.children %}
+                            <ul class="sidebar-sublist">
+                                {{ loop(child.children) }}
+                            </ul>
+                            {% endif %}
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    {% else %}
+                    <a href="{{ nav_item.url | url }}" class="sidebar-link{% if nav_item.active %} active{% endif %}">
+                        {{ nav_item.title }}
+                    </a>
+                    {% endif %}
+                </div>
+                {% endfor %}
+                {% endif %}
+            </nav>
+        </aside>
+        {% endif %}
+
+        <!-- Main Content -->
+        <main class="content" id="main-content">
+            <article class="article">
+                {% block content %}
+                {{ page.content }}
+                {% endblock %}
+            </article>
+
+            <!-- Page Navigation -->
+            <nav class="page-nav">
+                {% if page.previous_page %}
+                <a href="{{ page.previous_page.url | url }}" class="page-nav-link prev">
+                    <span class="page-nav-direction">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="15 18 9 12 15 6"/>
+                        </svg>
+                        Previous
+                    </span>
+                    <span class="page-nav-title">{{ page.previous_page.title }}</span>
+                </a>
+                {% endif %}
+                {% if page.next_page %}
+                <a href="{{ page.next_page.url | url }}" class="page-nav-link next">
+                    <span class="page-nav-direction">
+                        Next
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="9 18 15 12 9 6"/>
+                        </svg>
+                    </span>
+                    <span class="page-nav-title">{{ page.next_page.title }}</span>
+                </a>
+                {% endif %}
+            </nav>
+
+            <!-- Footer -->
+            <footer class="site-footer">
+                <div class="footer-content">
+                    {% if config.copyright %}
+                    <p class="copyright">{{ config.copyright }}</p>
+                    {% endif %}
+                    <p class="powered-by">
+                        Built with <a href="https://www.mkdocs.org" target="_blank" rel="noopener">MkDocs</a>
+                    </p>
+                </div>
+            </footer>
+        </main>
+
+        <!-- Table of Contents -->
+        {% if config.theme.toc | default(true) and page.toc %}
+        <aside class="toc">
+            <div class="toc-container">
+                <span class="toc-title">On this page</span>
+                <nav class="toc-nav">
+                    {% for toc_item in page.toc %}
+                    <a href="{{ toc_item.url }}" class="toc-link">{{ toc_item.title }}</a>
+                    {% if toc_item.children %}
+                    {% for toc_child in toc_item.children %}
+                    <a href="{{ toc_child.url }}" class="toc-link toc-link-nested">{{ toc_child.title }}</a>
+                    {% endfor %}
+                    {% endif %}
+                    {% endfor %}
+                </nav>
+            </div>
+        </aside>
+        {% endif %}
+    </div>
+
+    <!-- Scripts -->
+    <script src="{{ 'js/pristine.js' | url }}"></script>
+
+    {% for path in config.extra_javascript %}
+    <script src="{{ path | url }}"></script>
+    {% endfor %}
+</body>
+</html>

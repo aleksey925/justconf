@@ -2,7 +2,11 @@ vault:
 	docker compose exec -it vault /setup.sh
 
 deps:
-	uv sync --all-extras
+ifdef group
+	uv sync --group $(group)
+else
+	uv sync --all-groups
+endif
 
 test:
 	uv run pytest --cov=justconf --cov-report=xml
@@ -21,3 +25,13 @@ build:
 
 publish:
 	uv publish
+
+.PHONY: docs
+docs:
+	uv run python scripts/gen_docs.py
+	uv run mkdocs build --strict
+
+.PHONY: docs-serve
+docs-serve:
+	uv run python scripts/gen_docs.py
+	uv run mkdocs serve

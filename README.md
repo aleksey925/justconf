@@ -1,4 +1,5 @@
-# justconf
+justconf
+========
 
 [![license](https://img.shields.io/pypi/l/justconf?style=for-the-badge)](https://pypi.org/project/justconf/)
 [![python version](https://img.shields.io/pypi/pyversions/justconf?style=for-the-badge)](https://pypi.org/project/justconf/)
@@ -24,6 +25,7 @@ Schema-agnostic: use your preferred validation library (Pydantic, msgspec, datac
 - [Merge](#merge)
 - [Processors](#processors)
 - [Schema Placeholders](#schema-placeholders)
+- [Development](#development)
 - [License](#license)
 
 ## Installation
@@ -150,7 +152,7 @@ config = {"dsn": "postgres://user:${vault:secret/data/db#password}@localhost/db"
 
 ### VaultProcessor
 
-Fetches secrets from HashiCorp Vault (KV v2).
+Allows fetching secrets from HashiCorp Vault (KV v2).
 
 ```python
 from justconf import process
@@ -163,46 +165,26 @@ processor = VaultProcessor(
     verify=True,          # SSL verification (default: True)
 )
 
-config = {"api_key": "${vault:secret/data/myapp/api#key}"}
+config = {"db_pass": "${vault:secret/data/db#password}"}
 result = process(config, [processor])
-# {"api_key": "actual_key"}
+# {"db_pass": "secret_value"}
 ```
 
-#### Vault Path Structure
+> The path from placeholder matches Vault's HTTP API exactly (`GET /v1/{path}`).
+> For KV v2, this means `{mount}/data/{secret_path}`.
 
-Specify the **full path** in the placeholder, exactly as it appears in the Vault HTTP API:
+In the example, `secret/data/db` is the Vault path — taken from the UI URL
+with `show` replaced by `data`. The `#password` is the field name inside the secret.
 
 ```
-Placeholder:        ${vault:secret/data/myapp/database#password}
-                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-                                          │
-                                          └── full path as in Vault API
+Vault UI URL:  https://vault.example.com/ui/vault/secrets/secret/show/db
+                                                          ~~~~~~     ~~~
+                                                          mount      secret path
 ```
 
-**For KV v2**, the path format is `{mount}/data/{secret_path}`:
-- `secret/data/myapp` → mount=`secret`, secret=`myapp`
-- `team-kv/data/shared/db` → mount=`team-kv`, secret=`shared/db`
-
-**Benefits of this approach:**
-- Copy-paste from Vault UI or CLI works directly
-- Use secrets from different mount points in the same config
-- No hidden magic — the path is used as-is
-
-**Examples with different mount points:**
-
-```python
-config = {
-    "app_secret": "${vault:secret/data/myapp#password}",
-    "team_secret": "${vault:team-kv/data/shared/api#token}",
-    "infra_cert": "${vault:infra/data/tls/cert#value}",
-}
-
-processor = VaultProcessor(
-    url="http://vault:8200",
-    auth=TokenAuth(token="hvs.xxx"),
-)
-result = process(config, [processor])
-```
+Since the full path is specified in the placeholder, you can fetch secrets from
+different mount points in a single config (e.g., secret/data/..., team-kv/data/...)
+— just ensure your token has access to them.
 
 #### SSL Verification
 

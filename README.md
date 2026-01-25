@@ -1,4 +1,5 @@
-# justconf
+justconf
+========
 
 [![license](https://img.shields.io/pypi/l/justconf?style=for-the-badge)](https://pypi.org/project/justconf/)
 [![python version](https://img.shields.io/pypi/pyversions/justconf?style=for-the-badge)](https://pypi.org/project/justconf/)

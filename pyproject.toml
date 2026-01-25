@@ -29,6 +29,7 @@ optional-dependencies.dotenv = [
   "python-dotenv>=1",
 ]
 
+urls.Documentation = "https://aleksey925.github.io/justconf/"
 urls.Homepage = "https://github.com/aleksey925/justconf"
 urls.Issues = "https://github.com/aleksey925/justconf/issues"
 urls.Repository = "https://github.com/aleksey925/justconf"

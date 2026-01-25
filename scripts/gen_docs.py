@@ -2,7 +2,7 @@
 """Generate docs/index.md from README.md.
 
 Removes the first heading and manual Table of Contents section
-since MkDocs Material provides these automatically.
+since MkDocs provides these automatically.
 """
 
 import re

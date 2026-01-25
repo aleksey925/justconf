@@ -183,7 +183,6 @@
                 .then(response => response.json())
                 .then(data => {
                     this.index = data;
-                    console.log('Search index loaded');
                 })
                 .catch(err => console.error('Failed to load search index:', err));
         },

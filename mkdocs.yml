@@ -8,6 +8,9 @@ theme:
   name: null
   custom_dir: docs/theme
   language: en
+  sidebar: false
+  header_nav: false
+  toc_position: left
 
 plugins:
   - search

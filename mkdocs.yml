@@ -5,24 +5,18 @@ repo_url: https://github.com/aleksey925/justconf
 repo_name: aleksey925/justconf
 
 theme:
-  name: material
-  custom_dir: docs/overrides
-  palette:
-    scheme: slate
-    primary: black
-    accent: indigo
-  features:
-    - navigation.instant
-    - navigation.tracking
-    - navigation.top
-    - search.highlight
-    - search.share
-    - content.code.copy
+  name: null
+  custom_dir: docs/theme
+  language: en
 
 plugins:
   - search
 
 markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
   - pymdownx.highlight:
       anchor_linenums: true
       line_spans: __span
@@ -30,13 +24,3 @@ markdown_extensions:
   - pymdownx.inlinehilite
   - pymdownx.snippets
   - pymdownx.superfences
-  - toc:
-      permalink: true
-  - tables
-
-extra:
-  social:
-    - icon: fontawesome/brands/github
-      link: https://github.com/aleksey925/justconf
-    - icon: fontawesome/brands/python
-      link: https://pypi.org/project/justconf/

@@ -46,7 +46,9 @@ dev = [
   "ruff==0.14.13",
 ]
 docs = [
-  "mkdocs-material>=9",
+  "mkdocs>=1.5",
+  "pygments>=2.16",
+  "pymdown-extensions>=10",
 ]
 
 [tool.hatch.version]

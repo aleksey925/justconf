@@ -1,11 +1,12 @@
 site_name: justconf
-site_description: Minimal schema-agnostic configuration library for Python
+site_description: Minimal schema-agnostic configuration library for Python with support for TOML, dotenv, env vars, and Vault
 site_url: https://aleksey925.github.io/justconf/
 repo_url: https://github.com/aleksey925/justconf
 repo_name: aleksey925/justconf
 
 theme:
   name: material
+  custom_dir: docs/overrides
   palette:
     scheme: slate
     primary: black

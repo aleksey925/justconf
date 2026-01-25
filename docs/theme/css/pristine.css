@@ -1210,6 +1210,27 @@ body {
     color: var(--color-accent);
 }
 
+.mobile-nav-link-nested {
+    padding-left: var(--space-8);
+    color: var(--color-text-muted);
+}
+
+/* Compact TOC styling in mobile menu */
+.mobile-nav-toc .mobile-nav-link {
+    padding: var(--space-1) var(--space-4);
+    font-size: var(--text-sm);
+}
+
+.mobile-nav-toc .mobile-nav-link-nested {
+    padding: var(--space-1) var(--space-4) var(--space-1) var(--space-8);
+}
+
+/* Hide mobile menu toggle when nothing to show */
+.no-mobile-menu .mobile-menu-toggle,
+.no-mobile-menu .mobile-nav {
+    display: none !important;
+}
+
 /* ============================================
    Progress Bar
    ============================================ */

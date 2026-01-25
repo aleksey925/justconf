@@ -5,10 +5,12 @@
 {% endblock %}
 
 {% block extrahead %}
-  <meta name="keywords" content="python, config, configuration, dotenv, environment, secrets, settings, toml, vault, hashicorp">
   <meta property="og:type" content="website">
   <meta property="og:title" content="justconf — just configure it">
   <meta property="og:description" content="{{ config.site_description }}">
   <meta property="og:url" content="{{ config.site_url }}">
   <meta property="og:site_name" content="{{ config.site_name }}">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="justconf — just configure it">
+  <meta name="twitter:description" content="{{ config.site_description }}">
 {% endblock %}

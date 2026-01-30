@@ -606,6 +606,14 @@ class TestVaultProcessor:
         with pytest.raises(NoValidAuthError, match='All authentication methods failed'):
             processor.resolve('secret/data/test', 'key')
 
+    def test_auth__empty_list__raises_authentication_error(self):
+        # arrange
+        processor = VaultProcessor(url='http://vault:8200', auth=[])
+
+        # act & assert
+        with pytest.raises(AuthenticationError, match='No authentication methods provided'):
+            processor.resolve('secret/data/test', 'key')
+
     def test_token_caching__reuses_token_within_ttl(self):
         # arrange
         processor = create_processor_with_mock_auth()

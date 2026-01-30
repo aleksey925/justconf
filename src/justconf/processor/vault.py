@@ -356,6 +356,9 @@ class VaultProcessor(Processor):
 
     def _authenticate(self) -> tuple[str, int]:
         """Try all auth methods until one succeeds."""
+        if not self.auth_methods:
+            raise AuthenticationError('No authentication methods provided')
+
         errors: list[Exception] = []
 
         for auth in self.auth_methods:

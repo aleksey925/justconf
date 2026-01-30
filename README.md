@@ -355,6 +355,50 @@ Schema placeholders have the lowest priority. Override them in config files or e
 password = "${vault:secret/data/staging/db#password}"
 ```
 
+### Override Placeholders for Nested Types
+
+Use `WithPlaceholders` to override placeholders for nested types without modifying the original type.
+This is useful when you reuse the same type with different secret sources:
+
+```python
+from typing import Annotated
+from pydantic import BaseModel
+from justconf.schema import Placeholder, WithPlaceholders, extract_placeholders
+
+class DatabaseConfig(BaseModel):
+    host: str = "localhost"
+    password: Annotated[str, Placeholder("${vault:secret/data/default#password}")]
+    username: str = "admin"
+
+class AppConfig(BaseModel):
+    # Override placeholders for each instance
+    main_db: Annotated[DatabaseConfig, WithPlaceholders({
+        'password': '${vault:secret/data/main_db#password}',
+        'username': '${vault:secret/data/main_db#username}',
+    })]
+    replica_db: Annotated[DatabaseConfig, WithPlaceholders({
+        'password': '${vault:secret/data/replica_db#password}',
+    })]
+
+result = extract_placeholders(AppConfig)
+# {
+#     'main_db': {
+#         'password': '${vault:secret/data/main_db#password}',
+#         'username': '${vault:secret/data/main_db#username}',
+#     },
+#     'replica_db': {
+#         'password': '${vault:secret/data/replica_db#password}',
+#     },
+# }
+```
+
+**Behavior:**
+
+- Overrides are merged with placeholders from the nested type (overrides take priority)
+- Supports nested dicts for deep structures
+- Validates that all keys exist in the target type (raises `PlaceholderError` for invalid keys)
+- Works with `Optional[NestedType]` / `NestedType | None`
+
 ## Migration from pydantic-settings
 
 ### Basic Settings

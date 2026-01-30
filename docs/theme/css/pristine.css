@@ -935,6 +935,8 @@ body {
     margin: var(--space-6) 0;
     border-collapse: collapse;
     font-size: var(--text-sm);
+    display: block;
+    overflow-x: auto;
 }
 
 .article th,

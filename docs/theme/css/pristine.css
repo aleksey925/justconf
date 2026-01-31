@@ -698,6 +698,8 @@ body {
     max-width: var(--content-max-width);
     margin: 0 auto;
     animation: fadeIn 0.4s ease-out;
+    min-width: 0;
+    overflow-wrap: break-word;
 }
 
 @keyframes fadeIn {
@@ -867,6 +869,7 @@ body {
     font-family: var(--font-mono);
     font-size: 0.875em;
     color: var(--color-text);
+    word-break: break-all;
 }
 
 .article pre {

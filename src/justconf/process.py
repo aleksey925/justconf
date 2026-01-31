@@ -19,8 +19,8 @@ MODIFIER_PATTERN = re.compile(r'\|(?P<name>[a-z_]+):(?P<value>[^|]+)')
 
 
 @dataclass
-class Placeholder:
-    """Parsed placeholder."""
+class PlaceholderSpec:
+    """Placeholder specification parsed from config value."""
 
     processor: str
     path: str
@@ -28,7 +28,7 @@ class Placeholder:
     modifiers: dict[str, str]
 
     @classmethod
-    def parse(cls, match: re.Match[str]) -> 'Placeholder':
+    def parse(cls, match: re.Match[str]) -> 'PlaceholderSpec':
         modifiers_str = match.group('modifiers') or ''
         modifiers = {}
         for mod_match in MODIFIER_PATTERN.finditer(modifiers_str):
@@ -80,7 +80,7 @@ def _resolve_value(
 
     if match:
         # full string is a placeholder — resolve and return (possibly non-string)
-        placeholder = Placeholder.parse(match)
+        placeholder = PlaceholderSpec.parse(match)
         processor = processors_map.get(placeholder.processor)
 
         if processor is None:
@@ -91,7 +91,7 @@ def _resolve_value(
 
     # check for embedded placeholders
     def replace_match(m: re.Match[str]) -> str:
-        placeholder = Placeholder.parse(m)
+        placeholder = PlaceholderSpec.parse(m)
         processor = processors_map.get(placeholder.processor)
 
         if processor is None:
@@ -140,9 +140,8 @@ def process(
         >>> processor = VaultProcessor(
         ...     url="http://vault:8200",
         ...     auth=TokenAuth(token="hvs.xxx"),
-        ...     mount_path="secret",
         ... )
-        >>> config = {"db_password": "${vault:db#password}"}
+        >>> config = {"db_password": "${vault:secret/data/db#password}"}
         >>> result = process(config, [processor])
         >>> result["db_password"]
         'actual_password_from_vault'

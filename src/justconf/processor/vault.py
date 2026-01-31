@@ -321,7 +321,7 @@ class VaultProcessor(Processor):
         self,
         url: str,
         auth: VaultAuth | list[VaultAuth],
-        timeout: int = 30,
+        timeout: int = DEFAULT_TIMEOUT,
         verify: bool | str = True,
     ):
         """Initialize VaultProcessor.

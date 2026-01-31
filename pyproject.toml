@@ -51,12 +51,12 @@ docs = [
   "pymdown-extensions>=10",
 ]
 
+[tool.hatch.build.targets.wheel]
+packages = [ "src/justconf" ]
+
 [tool.hatch.version]
 source = "vcs"
 tag-pattern = "^v(?P<version>.*)$"
-
-[tool.hatch.build.targets.wheel]
-packages = [ "src/justconf" ]
 
 [tool.uv]
 default-groups = [ "dev" ]

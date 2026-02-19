@@ -174,14 +174,23 @@ result = process(config, [processor])
 > The path from placeholder matches Vault's HTTP API exactly (`GET /v1/{path}`).
 > For KV v2, this means `{mount}/data/{secret_path}`.
 
-In the example, `secret/data/db` is the Vault path — taken from the UI URL
-with `show` replaced by `data`. The `#password` is the field name inside the secret.
+In the example, `secret/data/db` is the Vault path. The `#password` is the field
+name inside the secret. To construct the path from the Vault UI URL, identify the
+mount point and secret path:
 
 ```
-Vault UI URL:  https://vault.example.com/ui/vault/secrets/secret/show/db
-                                                          ~~~~~~     ~~~
+Vault < 1.15:  https://vault.example.com/ui/vault/secrets/secret/show/db
+                                                          ~~~~~~     ~~
                                                           mount      secret path
+
+Vault >= 1.15: https://vault.example.com/ui/vault/secrets/secret/kv/db/details
+                                                          ~~~~~~    ~~
+                                                          mount     secret path
+
+API path:      secret/data/db
 ```
+
+Regardless of the UI URL format, the placeholder path is always `{mount}/data/{secret_path}`.
 
 Since the full path is specified in the placeholder, you can fetch secrets from
 different mount points in a single config (e.g., secret/data/..., team-kv/data/...)

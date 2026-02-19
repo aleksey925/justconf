@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import ssl
 import time
@@ -31,6 +32,8 @@ DEFAULT_AUTH_ORDER: tuple[AuthMethod, ...] = (
     'jwt',
     'userpass',
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _create_ssl_context(verify: bool | str) -> ssl.SSLContext | None:
@@ -359,13 +362,14 @@ class VaultProcessor(Processor):
         if not self.auth_methods:
             raise AuthenticationError('No authentication methods provided')
 
-        errors: list[Exception] = []
+        errors: dict[VaultAuth, Exception] = {}
 
         for auth in self.auth_methods:
             try:
                 return auth.authenticate(self.url, self.timeout, self._ssl_context)
             except AuthenticationError as e:
-                errors.append(e)
+                logger.warning('Authentication through "%s" failed with error: %s', auth, e)
+                errors[auth] = e
 
         raise NoValidAuthError(errors)
 

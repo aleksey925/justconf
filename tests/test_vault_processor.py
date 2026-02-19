@@ -1,3 +1,4 @@
+import io
 import json
 import ssl
 from http import HTTPStatus
@@ -23,6 +24,7 @@ from justconf.processor.vault import (
     _detect_kubernetes_auth,
     _detect_token_auth,
     _detect_userpass_auth,
+    _extract_vault_error,
 )
 
 
@@ -1142,6 +1144,70 @@ class TestVaultAuthFromEnv:
         assert isinstance(result[4], UserpassAuth)
 
 
+class TestExtractVaultError:
+    def test_extract_vault_error__vault_json_with_errors__returns_joined(self):
+        # arrange
+        error = create_http_error(HTTPStatus.BAD_REQUEST, body=b'{"errors": ["missing client token"]}')
+
+        # act
+        result = _extract_vault_error(error)
+
+        # assert
+        assert result == 'missing client token'
+
+    def test_extract_vault_error__multiple_errors__returns_semicolon_joined(self):
+        # arrange
+        error = create_http_error(HTTPStatus.BAD_REQUEST, body=b'{"errors": ["error one", "error two"]}')
+
+        # act
+        result = _extract_vault_error(error)
+
+        # assert
+        assert result == 'error one; error two'
+
+    def test_extract_vault_error__invalid_json__returns_raw_body(self):
+        # arrange
+        error = create_http_error(HTTPStatus.BAD_REQUEST, body=b'not json at all')
+
+        # act
+        result = _extract_vault_error(error)
+
+        # assert
+        assert result == 'not json at all'
+
+    def test_extract_vault_error__empty_body__returns_str_of_error(self):
+        # arrange
+        error = create_http_error(HTTPStatus.BAD_REQUEST)
+
+        # act
+        result = _extract_vault_error(error)
+
+        # assert
+        assert result == str(error)
+
+    def test_extract_vault_error__json_without_errors_key__returns_raw_body(self):
+        # arrange
+        body = b'{"message": "something went wrong"}'
+        error = create_http_error(HTTPStatus.BAD_REQUEST, body=body)
+
+        # act
+        result = _extract_vault_error(error)
+
+        # assert
+        assert result == body.decode()
+
+    def test_extract_vault_error__empty_errors_list__returns_raw_body(self):
+        # arrange
+        body = b'{"errors": []}'
+        error = create_http_error(HTTPStatus.BAD_REQUEST, body=body)
+
+        # act
+        result = _extract_vault_error(error)
+
+        # assert
+        assert result == body.decode()
+
+
 # fixtures and helpers
 
 
@@ -1152,11 +1218,12 @@ def create_processor_with_mock_auth():
     )
 
 
-def create_http_error(status_code):
+def create_http_error(status_code, *, body: bytes | None = None):
+    fp = io.BytesIO(body) if body is not None else None
     return HTTPError(
         url='http://vault:8200',
         code=status_code,
         msg=str(status_code),
         hdrs={},
-        fp=None,
+        fp=fp,
     )

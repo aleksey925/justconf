@@ -63,6 +63,23 @@ def _create_ssl_context(verify: bool | str) -> ssl.SSLContext | None:
         raise FileNotFoundError(f'CA bundle file not found: {verify}') from None
 
 
+def _extract_vault_error(e: HTTPError) -> str:
+    try:
+        body = e.read().decode(errors='replace')
+    except Exception:
+        return str(e)
+    if not body:
+        return str(e)
+    try:
+        data = json.loads(body)
+        errors = data.get('errors', [])
+        if errors:
+            return '; '.join(str(i) for i in errors)
+    except (json.JSONDecodeError, AttributeError):
+        pass
+    return body
+
+
 class VaultAuth(ABC):
     """Base class for Vault authentication methods."""
 
@@ -161,7 +178,7 @@ class AppRoleAuth(VaultAuth):
                 auth = data.get('auth', {})
                 return auth['client_token'], auth.get('lease_duration', 3600)
         except HTTPError as e:
-            raise AuthenticationError(f'AppRole authentication failed: {e}') from e
+            raise AuthenticationError(f'AppRole authentication failed: {_extract_vault_error(e)}') from e
         except KeyError as e:
             raise AuthenticationError(f'Invalid response from Vault: {e}') from e
 
@@ -207,7 +224,7 @@ class JwtAuth(VaultAuth):
                 auth = data.get('auth', {})
                 return auth['client_token'], auth.get('lease_duration', 3600)
         except HTTPError as e:
-            raise AuthenticationError(f'JWT authentication failed: {e}') from e
+            raise AuthenticationError(f'JWT authentication failed: {_extract_vault_error(e)}') from e
         except KeyError as e:
             raise AuthenticationError(f'Invalid response from Vault: {e}') from e
 
@@ -262,7 +279,7 @@ class KubernetesAuth(VaultAuth):
                 auth = data.get('auth', {})
                 return auth['client_token'], auth.get('lease_duration', 3600)
         except HTTPError as e:
-            raise AuthenticationError(f'Kubernetes authentication failed: {e}') from e
+            raise AuthenticationError(f'Kubernetes authentication failed: {_extract_vault_error(e)}') from e
         except KeyError as e:
             raise AuthenticationError(f'Invalid response from Vault: {e}') from e
 
@@ -303,7 +320,7 @@ class UserpassAuth(VaultAuth):
                 auth = data.get('auth', {})
                 return auth['client_token'], auth.get('lease_duration', 3600)
         except HTTPError as e:
-            raise AuthenticationError(f'Userpass authentication failed: {e}') from e
+            raise AuthenticationError(f'Userpass authentication failed: {_extract_vault_error(e)}') from e
         except KeyError as e:
             raise AuthenticationError(f'Invalid response from Vault: {e}') from e
 
@@ -368,7 +385,7 @@ class VaultProcessor(Processor):
             try:
                 return auth.authenticate(self.url, self.timeout, self._ssl_context)
             except AuthenticationError as e:
-                logger.warning('Authentication through "%s" failed with error: %s', auth, e)
+                logger.warning('Authentication through "%s" failed with error:\n%s', auth, e)
                 errors[auth] = e
 
         raise NoValidAuthError(errors)

@@ -408,6 +408,33 @@ result = extract_placeholders(AppConfig)
 - Validates that all keys exist in the target type (raises `PlaceholderError` for invalid keys)
 - Works with `Optional[NestedType]` / `NestedType | None`
 
+### Auto-Unpack Entire Value
+
+When a placeholder omits the `#key` part, the processor returns the entire value as a dictionary
+instead of extracting a single field. This is useful when all fields of a nested type are stored
+together under one path:
+
+```python
+from typing import Annotated
+from pydantic import BaseModel
+from justconf import process
+from justconf.schema import Placeholder, extract_placeholders
+
+class DatabaseConfig(BaseModel):
+    host: str
+    port: int
+    username: str
+    password: str
+
+class AppConfig(BaseModel):
+    db: Annotated[DatabaseConfig, Placeholder("${vault:secret/data/db}")]
+
+config = extract_placeholders(AppConfig)
+config = process(config, [vault_processor])
+# {'db': {'host': 'db.example.com', 'port': 5432, 'username': 'admin', 'password': 'secret'}}
+app_config = AppConfig(**config)
+```
+
 ## Migration from pydantic-settings
 
 ### Basic Settings
@@ -550,16 +577,16 @@ If you used `pydantic-settings-vault`, note these environment variable differenc
 | `VAULT_NAMESPACE`        | —                             | Not supported                                     |
 | `VAULT_CA_BUNDLE`        | —                             | Pass explicitly via `VaultProcessor(verify=...)`  |
 
-In `pydantic-settings-vault`, a single `VAULT_AUTH_MOUNT_POINT` variable is shared across all 
-authentication methods. In `justconf`, each method has its own variable 
-(`VAULT_APPROLE_MOUNT_PATH`, `VAULT_KUBERNETES_MOUNT_PATH`, `VAULT_JWT_MOUNT_PATH`), which allows 
+In `pydantic-settings-vault`, a single `VAULT_AUTH_MOUNT_POINT` variable is shared across all
+authentication methods. In `justconf`, each method has its own variable
+(`VAULT_APPROLE_MOUNT_PATH`, `VAULT_KUBERNETES_MOUNT_PATH`, `VAULT_JWT_MOUNT_PATH`), which allows
 setting different mount paths for different methods in a fallback chain.
 
-The `~/.vault-token` file is not read automatically — the token must be passed explicitly via 
+The `~/.vault-token` file is not read automatically — the token must be passed explicitly via
 `TokenAuth(token=...)` or the `VAULT_TOKEN` environment variable.
 
-Authentication method auto-detection priority also differs: `pydantic-settings-vault` uses 
-Token → Kubernetes → AppRole → JWT, while `justconf` uses AppRole → Kubernetes → Token → JWT → Userpass. 
+Authentication method auto-detection priority also differs: `pydantic-settings-vault` uses
+Token → Kubernetes → AppRole → JWT, while `justconf` uses AppRole → Kubernetes → Token → JWT → Userpass.
 In practice this rarely matters, since typically only one method is configured.
 
 ### Key Differences

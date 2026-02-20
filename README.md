@@ -260,7 +260,7 @@ if auths:
 # Or use fallback chain
 processor = VaultProcessor(
     url="http://vault:8200",
-    auth=auths,  # VaultProcessor accepts list
+    auth=auths,
 )
 
 # Explicit method selection
@@ -289,7 +289,6 @@ config = {
 
 result = process(config, [processor])
 # {"tls_cert": "/etc/ssl/cert.pem", "tls_key": "/etc/ssl/key.pem"}
-# Files are created with the secret content
 ```
 
 If the value is a dict or list, it's serialized as JSON.

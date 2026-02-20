@@ -306,6 +306,7 @@ across config files.
 from typing import Annotated
 from pydantic import BaseModel
 from justconf import merge, process, toml_loader
+from justconf.processor import VaultProcessor, TokenAuth
 from justconf.schema import Placeholder, extract_placeholders
 
 class DatabaseConfig(BaseModel):
@@ -327,7 +328,8 @@ config = merge(
     toml_loader("config.toml"),
 )
 
-# Resolve placeholders (vault_processor created as shown in Processors section)
+# Resolve placeholders
+vault_processor = VaultProcessor(url=..., auth=TokenAuth(token=...))
 config = process(config, [vault_processor])
 
 # Validate
@@ -417,6 +419,7 @@ together under one path:
 from typing import Annotated
 from pydantic import BaseModel
 from justconf import process
+from justconf.processor import VaultProcessor, TokenAuth
 from justconf.schema import Placeholder, extract_placeholders
 
 class DatabaseConfig(BaseModel):
@@ -428,6 +431,7 @@ class DatabaseConfig(BaseModel):
 class AppConfig(BaseModel):
     db: Annotated[DatabaseConfig, Placeholder("${vault:secret/data/db}")]
 
+vault_processor = VaultProcessor(url=..., auth=TokenAuth(token=...))
 config = extract_placeholders(AppConfig)
 config = process(config, [vault_processor])
 # {'db': {'host': 'db.example.com', 'port': 5432, 'username': 'admin', 'password': 'secret'}}

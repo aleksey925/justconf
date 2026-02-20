@@ -537,15 +537,41 @@ vault = VaultProcessor(
 config = AppConfig(**process(config, [vault]))
 ```
 
+### Environment Variable Changes
+
+If you used `pydantic-settings-vault`, note these environment variable differences:
+
+| pydantic-settings-vault  | justconf                      | Notes                                             |
+|--------------------------|-------------------------------|---------------------------------------------------|
+| `VAULT_AUTH_MOUNT_POINT` | `VAULT_APPROLE_MOUNT_PATH`    | Per-method variable for AppRole                   |
+| `VAULT_AUTH_MOUNT_POINT` | `VAULT_KUBERNETES_MOUNT_PATH` | Per-method variable for Kubernetes                |
+| `VAULT_AUTH_PATH`        | `VAULT_JWT_MOUNT_PATH`        | Per-method variable for JWT                       |
+| `VAULT_ADDR`             | —                             | Pass URL explicitly via `VaultProcessor(url=...)` |
+| `VAULT_NAMESPACE`        | —                             | Not supported                                     |
+| `VAULT_CA_BUNDLE`        | —                             | Pass explicitly via `VaultProcessor(verify=...)`  |
+
+In `pydantic-settings-vault`, a single `VAULT_AUTH_MOUNT_POINT` variable is shared across all 
+authentication methods. In `justconf`, each method has its own variable 
+(`VAULT_APPROLE_MOUNT_PATH`, `VAULT_KUBERNETES_MOUNT_PATH`, `VAULT_JWT_MOUNT_PATH`), which allows 
+setting different mount paths for different methods in a fallback chain.
+
+The `~/.vault-token` file is not read automatically — the token must be passed explicitly via 
+`TokenAuth(token=...)` or the `VAULT_TOKEN` environment variable.
+
+Authentication method auto-detection priority also differs: `pydantic-settings-vault` uses 
+Token → Kubernetes → AppRole → JWT, while `justconf` uses AppRole → Kubernetes → Token → JWT → Userpass. 
+In practice this rarely matters, since typically only one method is configured.
+
 ### Key Differences
 
-| pydantic-settings                | justconf                                    |
-|----------------------------------|---------------------------------------------|
-| `BaseSettings` class inheritance | Plain `BaseModel` + loaders                 |
-| `env_prefix` in model config     | `prefix` parameter in `env_loader()`        |
-| `env_nested_delimiter="__"`      | `__` is the delimiter by default            |
-| Field-level vault config         | Placeholders in schema or any config source |
-| Implicit env loading             | Explicit `merge()` of sources               |
+| pydantic-settings                 | justconf                                                          |
+|-----------------------------------|-------------------------------------------------------------------|
+| `BaseSettings` class inheritance  | Plain `BaseModel` + loaders                                       |
+| `env_prefix` in model config      | `prefix` parameter in `env_loader()`                              |
+| `env_nested_delimiter="__"`       | `__` is the delimiter by default                                  |
+| Field-level vault config          | Placeholders in schema or any config source                       |
+| Implicit env loading              | Explicit `merge()` of sources                                     |
+| `VAULT_AUTH_MOUNT_POINT` (shared) | Per-method mount path env vars (`VAULT_APPROLE_MOUNT_PATH`, etc.) |
 
 ## Development
 

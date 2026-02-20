@@ -309,7 +309,7 @@ from justconf import merge, process, toml_loader
 from justconf.schema import Placeholder, extract_placeholders
 
 class DatabaseConfig(BaseModel):
-    host: str = "localhost"  # static default
+    host: str = "localhost"
     port: int = 5432
     password: Annotated[str, Placeholder("${vault:secret/data/db/creds#password}")]
 
@@ -359,7 +359,6 @@ extract_placeholders(ServiceConfig)  # {'api_key': '${vault:secret/data/service#
 Schema placeholders have the lowest priority. Override them in config files or environment:
 
 ```toml
-# config.toml - overrides schema default
 [database]
 password = "${vault:secret/data/staging/db#password}"
 ```

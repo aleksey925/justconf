@@ -13,6 +13,7 @@ from typing import Any, Literal, cast
 from urllib.error import HTTPError
 
 from justconf.exception import (
+    AccessDeniedError,
     AuthenticationError,
     NoValidAuthError,
     SecretNotFoundError,
@@ -415,8 +416,10 @@ class VaultProcessor(Processor):
             detail = _extract_vault_error(e)
             if e.code == HTTPStatus.NOT_FOUND:
                 raise SecretNotFoundError(f'Secret not found: {path}: {detail}') from e
-            if e.code in (HTTPStatus.FORBIDDEN, HTTPStatus.UNAUTHORIZED):
+            if e.code == HTTPStatus.UNAUTHORIZED:
                 raise AuthenticationError(f'Token is invalid or expired: {detail}') from e
+            if e.code == HTTPStatus.FORBIDDEN:
+                raise AccessDeniedError(f'Access denied for {path}: {detail}') from e
             raise
 
     def _fetch_secret(self, path: str, key: str | None = None) -> Any:

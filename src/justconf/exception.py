@@ -25,6 +25,10 @@ class AuthenticationError(ProcessorError):
     """Authentication failed."""
 
 
+class AccessDeniedError(ProcessorError):
+    """Access to the secret is denied by Vault policy."""
+
+
 class NoValidAuthError(AuthenticationError):
     """All authentication methods failed."""
 

@@ -7,7 +7,7 @@ from urllib.error import HTTPError
 
 import pytest
 
-from justconf import AuthenticationError, NoValidAuthError, SecretNotFoundError
+from justconf import AccessDeniedError, AuthenticationError, NoValidAuthError, SecretNotFoundError
 from justconf.processor import (
     AppRoleAuth,
     JwtAuth,
@@ -727,7 +727,7 @@ class TestVaultProcessor:
             elif '/data/' in url:
                 # first request fails with auth error, second succeeds
                 if request_count == 2:
-                    raise create_http_error(HTTPStatus.FORBIDDEN)
+                    raise create_http_error(HTTPStatus.UNAUTHORIZED)
                 mock.__enter__.return_value.read.return_value = json.dumps(mock_secret_response).encode()
             return mock
 
@@ -797,7 +797,7 @@ class TestVaultProcessor:
         # assert (each call fetches secret)
         assert call_count == 3
 
-    def test_resolve__forbidden__raises_error_with_vault_details(self):
+    def test_resolve__forbidden__raises_access_denied_error(self):
         # arrange
         processor = create_processor_with_mock_auth()
 
@@ -815,8 +815,8 @@ class TestVaultProcessor:
         # act & assert
         with patch('urllib.request.urlopen', side_effect=side_effect):
             with pytest.raises(
-                AuthenticationError,
-                match='Token is invalid or expired: 1 error occurred: permission denied',
+                AccessDeniedError,
+                match='Access denied for secret/data/test: 1 error occurred: permission denied',
             ):
                 processor.resolve('secret/data/test', 'key')
 

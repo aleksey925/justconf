@@ -133,7 +133,7 @@ class TokenAuth(VaultAuth):
                 return self.token, ttl
         except HTTPError as e:
             if e.code in (HTTPStatus.FORBIDDEN, HTTPStatus.UNAUTHORIZED):
-                raise AuthenticationError('Invalid token') from e
+                raise AuthenticationError(f'Token authentication failed: {_extract_vault_error(e)}') from e
             raise
 
 
@@ -412,10 +412,11 @@ class VaultProcessor(Processor):
             with urllib.request.urlopen(req, timeout=self.timeout, context=self._ssl_context) as resp:
                 return cast(dict[str, Any], json.loads(resp.read()))
         except HTTPError as e:
+            detail = _extract_vault_error(e)
             if e.code == HTTPStatus.NOT_FOUND:
-                raise SecretNotFoundError(f'Secret not found: {path}') from e
+                raise SecretNotFoundError(f'Secret not found: {path}: {detail}') from e
             if e.code in (HTTPStatus.FORBIDDEN, HTTPStatus.UNAUTHORIZED):
-                raise AuthenticationError('Token is invalid or expired') from e
+                raise AuthenticationError(f'Token is invalid or expired: {detail}') from e
             raise
 
     def _fetch_secret(self, path: str, key: str | None = None) -> Any:

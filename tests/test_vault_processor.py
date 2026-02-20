@@ -53,14 +53,17 @@ class TestTokenAuth:
         with pytest.raises(AuthenticationError, match='Token is empty'):
             auth.authenticate('http://vault:8200')
 
-    def test_authenticate__invalid_token__raises_error(self):
+    def test_authenticate__invalid_token__raises_error_with_details(self):
         # arrange
         auth = TokenAuth(token='invalid')
 
         # act & assert
         with patch('urllib.request.urlopen') as mock_urlopen:
-            mock_urlopen.side_effect = create_http_error(HTTPStatus.FORBIDDEN)
-            with pytest.raises(AuthenticationError, match='Invalid token'):
+            mock_urlopen.side_effect = create_http_error(
+                HTTPStatus.FORBIDDEN,
+                body=b'{"errors": ["permission denied"]}',
+            )
+            with pytest.raises(AuthenticationError, match='Token authentication failed: permission denied'):
                 auth.authenticate('http://vault:8200')
 
 
@@ -447,7 +450,7 @@ class TestVaultProcessor:
         # assert
         assert result == {'user': 'admin', 'pass': 'secret'}
 
-    def test_resolve__secret_not_found__raises_error(self):
+    def test_resolve__secret_not_found__raises_error_with_details(self):
         # arrange
         processor = create_processor_with_mock_auth()
 
@@ -457,11 +460,11 @@ class TestVaultProcessor:
                 mock = MagicMock()
                 mock.__enter__.return_value.read.return_value = json.dumps({'data': {'ttl': 3600}}).encode()
                 return mock
-            raise create_http_error(HTTPStatus.NOT_FOUND)
+            raise create_http_error(HTTPStatus.NOT_FOUND, body=b'{"errors": []}')
 
         # act & assert
         with patch('urllib.request.urlopen', side_effect=side_effect):
-            with pytest.raises(SecretNotFoundError, match='Secret not found'):
+            with pytest.raises(SecretNotFoundError, match='Secret not found: secret/data/nonexistent'):
                 processor.resolve('secret/data/nonexistent', 'key')
 
     def test_resolve__key_not_found__raises_error(self):
@@ -793,6 +796,29 @@ class TestVaultProcessor:
 
         # assert (each call fetches secret)
         assert call_count == 3
+
+    def test_resolve__forbidden__raises_error_with_vault_details(self):
+        # arrange
+        processor = create_processor_with_mock_auth()
+
+        def side_effect(*args, **kwargs):
+            url = args[0].full_url if hasattr(args[0], 'full_url') else str(args[0])
+            if 'lookup-self' in url:
+                mock = MagicMock()
+                mock.__enter__.return_value.read.return_value = json.dumps({'data': {'ttl': 3600}}).encode()
+                return mock
+            raise create_http_error(
+                HTTPStatus.FORBIDDEN,
+                body=b'{"errors": ["1 error occurred: permission denied"]}',
+            )
+
+        # act & assert
+        with patch('urllib.request.urlopen', side_effect=side_effect):
+            with pytest.raises(
+                AuthenticationError,
+                match='Token is invalid or expired: 1 error occurred: permission denied',
+            ):
+                processor.resolve('secret/data/test', 'key')
 
     def test_name_property__returns_vault(self):
         # arrange

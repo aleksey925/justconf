@@ -443,13 +443,18 @@ app_config = AppConfig(**config)
 
 **Before (pydantic-settings):**
 ```python
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseModel, BaseSettings, SettingsConfigDict
+
+class DatabaseConfig(BaseModel):
+    host: str = "localhost"
+    port: int = 5432
 
 class AppConfig(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="APP_")
+    model_config = SettingsConfigDict(env_prefix="APP_", env_nested_delimiter="__")
 
     debug: bool = False
     port: int = 8080
+    database: DatabaseConfig = DatabaseConfig()
 
 config = AppConfig()
 ```
@@ -459,47 +464,16 @@ config = AppConfig()
 from pydantic import BaseModel
 from justconf import merge, env_loader
 
+class DatabaseConfig(BaseModel):
+    host: str = "localhost"
+    port: int = 5432
+
 class AppConfig(BaseModel):
     debug: bool = False
     port: int = 8080
+    database: DatabaseConfig = DatabaseConfig()
 
 config = AppConfig(**merge(env_loader(prefix="APP")))
-```
-
-### Nested Settings
-
-**Before (pydantic-settings):**
-```python
-from pydantic import BaseModel
-from pydantic_settings import BaseSettings, SettingsConfigDict
-
-class DatabaseConfig(BaseModel):
-    host: str = "localhost"
-    port: int = 5432
-
-class AppConfig(BaseSettings):
-    model_config = SettingsConfigDict(env_nested_delimiter="__")
-
-    database: DatabaseConfig = DatabaseConfig()
-
-# Requires: DATABASE__HOST=prod-db DATABASE__PORT=5433
-config = AppConfig()
-```
-
-**After (justconf):**
-```python
-from pydantic import BaseModel
-from justconf import merge, env_loader
-
-class DatabaseConfig(BaseModel):
-    host: str = "localhost"
-    port: int = 5432
-
-class AppConfig(BaseModel):
-    database: DatabaseConfig = DatabaseConfig()
-
-# Same env vars work: DATABASE__HOST=prod-db DATABASE__PORT=5433
-config = AppConfig(**merge(env_loader()))
 ```
 
 ### With Vault Secrets
@@ -542,7 +516,7 @@ class AppConfig(BaseSettings):
             file_secret_settings,
         )
 
-config = AppConfig()  # auth from VAULT_TOKEN env
+config = AppConfig()
 ```
 
 **After (justconf):**
@@ -561,7 +535,7 @@ config = merge(extract_placeholders(AppConfig), env_loader())
 
 vault = VaultProcessor(
     url="http://vault:8200",
-    auth=vault_auth_from_env(),  # all detected methods as fallback chain
+    auth=vault_auth_from_env(),
 )
 config = AppConfig(**process(config, [vault]))
 ```

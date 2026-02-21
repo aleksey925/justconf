@@ -443,7 +443,8 @@ app_config = AppConfig(**config)
 
 **Before (pydantic-settings):**
 ```python
-from pydantic_settings import BaseModel, BaseSettings, SettingsConfigDict
+from pydantic import BaseModel
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class DatabaseConfig(BaseModel):
     host: str = "localhost"

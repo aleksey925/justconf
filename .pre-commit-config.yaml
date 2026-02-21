@@ -57,7 +57,7 @@ repos:
       - id: pyproject-fmt
         name: pyproject-fmt
         language: system
-        entry: uvx pyproject-fmt
+        entry: pyproject-fmt
         files: ^pyproject\.toml$
 
       - id: mypy

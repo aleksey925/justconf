@@ -1,4 +1,5 @@
 from justconf.exception import (
+    AccessDeniedError,
     AuthenticationError,
     LoaderError,
     NoValidAuthError,
@@ -13,6 +14,7 @@ from justconf.process import process
 from justconf.schema import Placeholder, WithPlaceholders, extract_placeholders
 
 __all__ = [
+    'AccessDeniedError',
     'AuthenticationError',
     'LoaderError',
     'NoValidAuthError',

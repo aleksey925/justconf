@@ -10,7 +10,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from http import HTTPStatus
 from typing import Any, Literal, cast
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 
 from justconf.exception import (
     AccessDeniedError,
@@ -21,6 +21,9 @@ from justconf.exception import (
 from justconf.processor.base import Processor
 
 DEFAULT_TIMEOUT = 30
+DEFAULT_RETRIES = 3
+DEFAULT_BACKOFF_FACTOR = 0.5
+RETRYABLE_HTTP_STATUS_CODES: frozenset[int] = frozenset({500, 502, 503})
 TOKEN_REFRESH_BUFFER_SECONDS = 30
 KUBERNETES_SA_TOKEN_PATH = '/var/run/secrets/kubernetes.io/serviceaccount/token'  # noqa: S105
 
@@ -81,6 +84,35 @@ def _extract_vault_error(e: HTTPError) -> str:
     return body
 
 
+def _urlopen_with_retry(
+    request: urllib.request.Request,
+    timeout: int = DEFAULT_TIMEOUT,
+    ssl_context: ssl.SSLContext | None = None,
+    retries: int = DEFAULT_RETRIES,
+    backoff_factor: float = DEFAULT_BACKOFF_FACTOR,
+) -> Any:
+    max_attempts = 1 + retries
+    for attempt in range(max_attempts):
+        try:
+            return urllib.request.urlopen(request, timeout=timeout, context=ssl_context)
+        except URLError as e:
+            if isinstance(e, HTTPError) and e.code not in RETRYABLE_HTTP_STATUS_CODES:
+                raise
+            if attempt == max_attempts - 1:
+                raise
+            delay = backoff_factor * 2**attempt
+            detail = f'HTTP {e.code}' if isinstance(e, HTTPError) else str(e)
+            logger.warning(
+                'Vault request to %s failed with %s, retrying in %.1fs (attempt %d/%d)',
+                request.full_url,
+                detail,
+                delay,
+                attempt + 1,
+                max_attempts,
+            )
+            time.sleep(delay)
+
+
 class VaultAuth(ABC):
     """Base class for Vault authentication methods."""
 
@@ -90,6 +122,8 @@ class VaultAuth(ABC):
         vault_url: str,
         timeout: int = DEFAULT_TIMEOUT,
         ssl_context: ssl.SSLContext | None = None,
+        retries: int = DEFAULT_RETRIES,
+        backoff_factor: float = DEFAULT_BACKOFF_FACTOR,
     ) -> tuple[str, int]:
         """Authenticate with Vault and return token with TTL.
 
@@ -97,6 +131,8 @@ class VaultAuth(ABC):
             vault_url: Base URL of the Vault server.
             timeout: Request timeout in seconds.
             ssl_context: SSL context for HTTPS connections.
+            retries: Number of retries for transient HTTP errors.
+            backoff_factor: Multiplier for exponential backoff between retries.
 
         Returns:
             Tuple of (token, ttl_seconds).
@@ -113,11 +149,16 @@ class TokenAuth(VaultAuth):
     def __init__(self, token: str):
         self.token = token
 
+    def __repr__(self) -> str:
+        return f'{type(self).__name__}(token="***")'
+
     def authenticate(
         self,
         vault_url: str,
         timeout: int = DEFAULT_TIMEOUT,
         ssl_context: ssl.SSLContext | None = None,
+        retries: int = DEFAULT_RETRIES,
+        backoff_factor: float = DEFAULT_BACKOFF_FACTOR,
     ) -> tuple[str, int]:
         if not self.token:
             raise AuthenticationError('Token is empty')
@@ -128,7 +169,9 @@ class TokenAuth(VaultAuth):
                 f'{vault_url}/v1/auth/token/lookup-self',
                 headers={'X-Vault-Token': self.token},
             )
-            with urllib.request.urlopen(req, timeout=timeout, context=ssl_context) as resp:
+            with _urlopen_with_retry(
+                req, timeout=timeout, ssl_context=ssl_context, retries=retries, backoff_factor=backoff_factor
+            ) as resp:
                 data = json.loads(resp.read())
                 ttl = data.get('data', {}).get('ttl', 3600)
                 return self.token, ttl
@@ -151,11 +194,16 @@ class AppRoleAuth(VaultAuth):
         self.secret_id = secret_id
         self.mount_path = mount_path
 
+    def __repr__(self) -> str:
+        return f'{type(self).__name__}(role_id="***", mount_path={self.mount_path!r})'
+
     def authenticate(
         self,
         vault_url: str,
         timeout: int = DEFAULT_TIMEOUT,
         ssl_context: ssl.SSLContext | None = None,
+        retries: int = DEFAULT_RETRIES,
+        backoff_factor: float = DEFAULT_BACKOFF_FACTOR,
     ) -> tuple[str, int]:
         if not self.role_id or not self.secret_id:
             raise AuthenticationError('role_id and secret_id are required')
@@ -174,11 +222,15 @@ class AppRoleAuth(VaultAuth):
                 headers={'Content-Type': 'application/json'},
                 method='POST',
             )
-            with urllib.request.urlopen(req, timeout=timeout, context=ssl_context) as resp:
+            with _urlopen_with_retry(
+                req, timeout=timeout, ssl_context=ssl_context, retries=retries, backoff_factor=backoff_factor
+            ) as resp:
                 data = json.loads(resp.read())
                 auth = data.get('auth', {})
                 return auth['client_token'], auth.get('lease_duration', 3600)
         except HTTPError as e:
+            if e.code in RETRYABLE_HTTP_STATUS_CODES:
+                raise
             raise AuthenticationError(f'AppRole authentication failed: {_extract_vault_error(e)}') from e
         except KeyError as e:
             raise AuthenticationError(f'Invalid response from Vault: {e}') from e
@@ -197,11 +249,16 @@ class JwtAuth(VaultAuth):
         self.jwt = jwt
         self.mount_path = mount_path
 
+    def __repr__(self) -> str:
+        return f'{type(self).__name__}(role={self.role!r}, mount_path={self.mount_path!r})'
+
     def authenticate(
         self,
         vault_url: str,
         timeout: int = DEFAULT_TIMEOUT,
         ssl_context: ssl.SSLContext | None = None,
+        retries: int = DEFAULT_RETRIES,
+        backoff_factor: float = DEFAULT_BACKOFF_FACTOR,
     ) -> tuple[str, int]:
         if not self.jwt:
             raise AuthenticationError('JWT token is empty')
@@ -220,11 +277,15 @@ class JwtAuth(VaultAuth):
                 headers={'Content-Type': 'application/json'},
                 method='POST',
             )
-            with urllib.request.urlopen(req, timeout=timeout, context=ssl_context) as resp:
+            with _urlopen_with_retry(
+                req, timeout=timeout, ssl_context=ssl_context, retries=retries, backoff_factor=backoff_factor
+            ) as resp:
                 data = json.loads(resp.read())
                 auth = data.get('auth', {})
                 return auth['client_token'], auth.get('lease_duration', 3600)
         except HTTPError as e:
+            if e.code in RETRYABLE_HTTP_STATUS_CODES:
+                raise
             raise AuthenticationError(f'JWT authentication failed: {_extract_vault_error(e)}') from e
         except KeyError as e:
             raise AuthenticationError(f'Invalid response from Vault: {e}') from e
@@ -245,6 +306,9 @@ class KubernetesAuth(VaultAuth):
         self.jwt_path = jwt_path
         self.mount_path = mount_path
 
+    def __repr__(self) -> str:
+        return f'{type(self).__name__}(role={self.role!r}, mount_path={self.mount_path!r})'
+
     @property
     def jwt(self) -> str:
         if self._jwt:
@@ -260,6 +324,8 @@ class KubernetesAuth(VaultAuth):
         vault_url: str,
         timeout: int = DEFAULT_TIMEOUT,
         ssl_context: ssl.SSLContext | None = None,
+        retries: int = DEFAULT_RETRIES,
+        backoff_factor: float = DEFAULT_BACKOFF_FACTOR,
     ) -> tuple[str, int]:
         payload = json.dumps(
             {
@@ -275,11 +341,15 @@ class KubernetesAuth(VaultAuth):
                 headers={'Content-Type': 'application/json'},
                 method='POST',
             )
-            with urllib.request.urlopen(req, timeout=timeout, context=ssl_context) as resp:
+            with _urlopen_with_retry(
+                req, timeout=timeout, ssl_context=ssl_context, retries=retries, backoff_factor=backoff_factor
+            ) as resp:
                 data = json.loads(resp.read())
                 auth = data.get('auth', {})
                 return auth['client_token'], auth.get('lease_duration', 3600)
         except HTTPError as e:
+            if e.code in RETRYABLE_HTTP_STATUS_CODES:
+                raise
             raise AuthenticationError(f'Kubernetes authentication failed: {_extract_vault_error(e)}') from e
         except KeyError as e:
             raise AuthenticationError(f'Invalid response from Vault: {e}') from e
@@ -298,11 +368,16 @@ class UserpassAuth(VaultAuth):
         self.password = password
         self.mount_path = mount_path
 
+    def __repr__(self) -> str:
+        return f'{type(self).__name__}(username={self.username!r}, mount_path={self.mount_path!r})'
+
     def authenticate(
         self,
         vault_url: str,
         timeout: int = DEFAULT_TIMEOUT,
         ssl_context: ssl.SSLContext | None = None,
+        retries: int = DEFAULT_RETRIES,
+        backoff_factor: float = DEFAULT_BACKOFF_FACTOR,
     ) -> tuple[str, int]:
         if not self.username or not self.password:
             raise AuthenticationError('Username and password are required')
@@ -316,11 +391,15 @@ class UserpassAuth(VaultAuth):
                 headers={'Content-Type': 'application/json'},
                 method='POST',
             )
-            with urllib.request.urlopen(req, timeout=timeout, context=ssl_context) as resp:
+            with _urlopen_with_retry(
+                req, timeout=timeout, ssl_context=ssl_context, retries=retries, backoff_factor=backoff_factor
+            ) as resp:
                 data = json.loads(resp.read())
                 auth = data.get('auth', {})
                 return auth['client_token'], auth.get('lease_duration', 3600)
         except HTTPError as e:
+            if e.code in RETRYABLE_HTTP_STATUS_CODES:
+                raise
             raise AuthenticationError(f'Userpass authentication failed: {_extract_vault_error(e)}') from e
         except KeyError as e:
             raise AuthenticationError(f'Invalid response from Vault: {e}') from e
@@ -344,6 +423,8 @@ class VaultProcessor(Processor):
         auth: VaultAuth | list[VaultAuth],
         timeout: int = DEFAULT_TIMEOUT,
         verify: bool | str = True,
+        retries: int = DEFAULT_RETRIES,
+        backoff_factor: float = DEFAULT_BACKOFF_FACTOR,
     ):
         """Initialize VaultProcessor.
 
@@ -353,6 +434,8 @@ class VaultProcessor(Processor):
             timeout: Request timeout in seconds.
             verify: SSL certificate verification. True (default) uses system CA,
                     False disables verification, or path to CA bundle file.
+            retries: Number of retries for transient HTTP errors (500, 502, 503).
+            backoff_factor: Multiplier for exponential backoff between retries.
 
         Raises:
             ValueError: If URL is invalid.
@@ -366,6 +449,8 @@ class VaultProcessor(Processor):
         self.url = url.rstrip('/')
         self.auth_methods = auth if isinstance(auth, list) else [auth]
         self.timeout = timeout
+        self.retries = retries
+        self.backoff_factor = backoff_factor
         self._ssl_context = _create_ssl_context(verify)
 
         # token cache
@@ -384,7 +469,9 @@ class VaultProcessor(Processor):
 
         for auth in self.auth_methods:
             try:
-                return auth.authenticate(self.url, self.timeout, self._ssl_context)
+                return auth.authenticate(
+                    self.url, self.timeout, self._ssl_context, retries=self.retries, backoff_factor=self.backoff_factor
+                )
             except AuthenticationError as e:
                 logger.warning('Authentication through "%s" failed with error:\n%s', auth, e)
                 errors[auth] = e
@@ -410,7 +497,13 @@ class VaultProcessor(Processor):
             headers={'X-Vault-Token': token},
         )
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout, context=self._ssl_context) as resp:
+            with _urlopen_with_retry(
+                req,
+                timeout=self.timeout,
+                ssl_context=self._ssl_context,
+                retries=self.retries,
+                backoff_factor=self.backoff_factor,
+            ) as resp:
                 return cast(dict[str, Any], json.loads(resp.read()))
         except HTTPError as e:
             detail = _extract_vault_error(e)

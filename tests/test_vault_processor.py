@@ -1,9 +1,10 @@
 import io
 import json
 import ssl
+import urllib.request
 from http import HTTPStatus
 from unittest.mock import MagicMock, patch
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 
 import pytest
 
@@ -25,6 +26,7 @@ from justconf.processor.vault import (
     _detect_token_auth,
     _detect_userpass_auth,
     _extract_vault_error,
+    _urlopen_with_retry,
 )
 
 
@@ -119,6 +121,17 @@ class TestAppRoleAuth:
             with pytest.raises(AuthenticationError, match='AppRole authentication failed'):
                 auth.authenticate('http://vault:8200')
 
+    @patch('justconf.processor.vault.time.sleep')
+    def test_authenticate__server_error__reraises_http_error(self, _mock_sleep):
+        # arrange
+        auth = AppRoleAuth(role_id='role', secret_id='secret')
+
+        # act & assert
+        with patch('urllib.request.urlopen') as mock_urlopen:
+            mock_urlopen.side_effect = create_http_error(HTTPStatus.INTERNAL_SERVER_ERROR)
+            with pytest.raises(HTTPError):
+                auth.authenticate('http://vault:8200')
+
     def test_authenticate__invalid_response__raises_auth_error(self):
         # arrange
         auth = AppRoleAuth(role_id='role', secret_id='secret')
@@ -181,6 +194,17 @@ class TestJwtAuth:
         with patch('urllib.request.urlopen') as mock_urlopen:
             mock_urlopen.side_effect = create_http_error(HTTPStatus.FORBIDDEN)
             with pytest.raises(AuthenticationError, match='JWT authentication failed'):
+                auth.authenticate('http://vault:8200')
+
+    @patch('justconf.processor.vault.time.sleep')
+    def test_authenticate__server_error__reraises_http_error(self, _mock_sleep):
+        # arrange
+        auth = JwtAuth(role='myproject', jwt='token')
+
+        # act & assert
+        with patch('urllib.request.urlopen') as mock_urlopen:
+            mock_urlopen.side_effect = create_http_error(HTTPStatus.INTERNAL_SERVER_ERROR)
+            with pytest.raises(HTTPError):
                 auth.authenticate('http://vault:8200')
 
     def test_authenticate__invalid_response__raises_auth_error(self):
@@ -264,6 +288,17 @@ class TestKubernetesAuth:
             with pytest.raises(AuthenticationError, match='Kubernetes authentication failed'):
                 auth.authenticate('http://vault:8200')
 
+    @patch('justconf.processor.vault.time.sleep')
+    def test_authenticate__server_error__reraises_http_error(self, _mock_sleep):
+        # arrange
+        auth = KubernetesAuth(role='myapp', jwt='token')
+
+        # act & assert
+        with patch('urllib.request.urlopen') as mock_urlopen:
+            mock_urlopen.side_effect = create_http_error(HTTPStatus.INTERNAL_SERVER_ERROR)
+            with pytest.raises(HTTPError):
+                auth.authenticate('http://vault:8200')
+
     def test_authenticate__invalid_response__raises_auth_error(self):
         # arrange
         auth = KubernetesAuth(role='myapp', jwt='token')
@@ -333,6 +368,17 @@ class TestUserpassAuth:
         with patch('urllib.request.urlopen') as mock_urlopen:
             mock_urlopen.side_effect = create_http_error(HTTPStatus.FORBIDDEN)
             with pytest.raises(AuthenticationError, match='Userpass authentication failed'):
+                auth.authenticate('http://vault:8200')
+
+    @patch('justconf.processor.vault.time.sleep')
+    def test_authenticate__server_error__reraises_http_error(self, _mock_sleep):
+        # arrange
+        auth = UserpassAuth(username='admin', password='secret')
+
+        # act & assert
+        with patch('urllib.request.urlopen') as mock_urlopen:
+            mock_urlopen.side_effect = create_http_error(HTTPStatus.INTERNAL_SERVER_ERROR)
+            with pytest.raises(HTTPError):
                 auth.authenticate('http://vault:8200')
 
     def test_authenticate__invalid_response__raises_auth_error(self):
@@ -829,6 +875,120 @@ class TestVaultProcessor:
 
         # assert
         assert processor.name == 'vault'
+
+
+class TestUrlOpenWithRetry:
+    @patch('justconf.processor.vault.time.sleep')
+    def test_success_on_first_attempt(self, _mock_sleep):
+        # arrange
+        mock_resp = MagicMock()
+
+        # act
+        with patch('urllib.request.urlopen', return_value=mock_resp) as mock_urlopen:
+            req = urllib.request.Request('http://vault:8200/v1/test')
+            result = _urlopen_with_retry(req)
+
+        # assert
+        assert result is mock_resp
+        mock_urlopen.assert_called_once()
+
+    @pytest.mark.parametrize('status_code', [500, 502, 503])
+    @patch('justconf.processor.vault.time.sleep')
+    def test_retry_on_retryable_status__success_on_next_attempt(self, mock_sleep, status_code):
+        # arrange
+        mock_resp = MagicMock()
+
+        # act
+        with patch('urllib.request.urlopen') as mock_urlopen:
+            mock_urlopen.side_effect = [create_http_error(status_code), mock_resp]
+            req = urllib.request.Request('http://vault:8200/v1/test')
+            result = _urlopen_with_retry(req, retries=1)
+
+        # assert
+        assert result is mock_resp
+        assert mock_urlopen.call_count == 2
+        mock_sleep.assert_called_once_with(0.5)
+
+    @pytest.mark.parametrize('status_code', [404, 403])
+    @patch('justconf.processor.vault.time.sleep')
+    def test_no_retry_on_non_retryable_status(self, mock_sleep, status_code):
+        # act & assert
+        with patch('urllib.request.urlopen') as mock_urlopen:
+            mock_urlopen.side_effect = create_http_error(status_code)
+            req = urllib.request.Request('http://vault:8200/v1/test')
+            with pytest.raises(HTTPError) as exc_info:
+                _urlopen_with_retry(req, retries=3)
+
+        assert exc_info.value.code == status_code
+        mock_urlopen.assert_called_once()
+        mock_sleep.assert_not_called()
+
+    @patch('justconf.processor.vault.time.sleep')
+    def test_retry_on_url_error__success_on_next_attempt(self, mock_sleep):
+        # arrange
+        mock_resp = MagicMock()
+
+        # act
+        with patch('urllib.request.urlopen') as mock_urlopen:
+            mock_urlopen.side_effect = [URLError('connection refused'), mock_resp]
+            req = urllib.request.Request('http://vault:8200/v1/test')
+            result = _urlopen_with_retry(req, retries=1)
+
+        # assert
+        assert result is mock_resp
+        assert mock_urlopen.call_count == 2
+        mock_sleep.assert_called_once_with(0.5)
+
+    @patch('justconf.processor.vault.time.sleep')
+    def test_all_attempts_exhausted__raises_last_error(self, mock_sleep):
+        # act & assert
+        with patch('urllib.request.urlopen') as mock_urlopen:
+            mock_urlopen.side_effect = [
+                create_http_error(HTTPStatus.INTERNAL_SERVER_ERROR),
+                create_http_error(HTTPStatus.INTERNAL_SERVER_ERROR),
+                create_http_error(HTTPStatus.INTERNAL_SERVER_ERROR),
+                create_http_error(HTTPStatus.INTERNAL_SERVER_ERROR),
+            ]
+            req = urllib.request.Request('http://vault:8200/v1/test')
+            with pytest.raises(HTTPError):
+                _urlopen_with_retry(req, retries=3)
+
+        # 1 initial + 3 retries = 4
+        assert mock_urlopen.call_count == 4
+        assert mock_sleep.call_count == 3
+
+    @patch('justconf.processor.vault.time.sleep')
+    def test_retries_zero__no_retry(self, mock_sleep):
+        # act & assert
+        with patch('urllib.request.urlopen') as mock_urlopen:
+            mock_urlopen.side_effect = create_http_error(HTTPStatus.INTERNAL_SERVER_ERROR)
+            req = urllib.request.Request('http://vault:8200/v1/test')
+            with pytest.raises(HTTPError):
+                _urlopen_with_retry(req, retries=0)
+
+        mock_urlopen.assert_called_once()
+        mock_sleep.assert_not_called()
+
+    @patch('justconf.processor.vault.time.sleep')
+    def test_backoff_delays(self, mock_sleep):
+        # act
+        with patch('urllib.request.urlopen') as mock_urlopen:
+            mock_urlopen.side_effect = [
+                create_http_error(HTTPStatus.INTERNAL_SERVER_ERROR),
+                create_http_error(HTTPStatus.BAD_GATEWAY),
+                create_http_error(HTTPStatus.SERVICE_UNAVAILABLE),
+                create_http_error(HTTPStatus.INTERNAL_SERVER_ERROR),
+            ]
+            req = urllib.request.Request('http://vault:8200/v1/test')
+            with pytest.raises(HTTPError):
+                _urlopen_with_retry(req, retries=3, backoff_factor=0.5)
+
+        # assert: delays are 0.5*2^0=0.5, 0.5*2^1=1.0, 0.5*2^2=2.0
+        assert mock_sleep.call_args_list == [
+            ((0.5,),),
+            ((1.0,),),
+            ((2.0,),),
+        ]
 
 
 class TestCreateSslContext:

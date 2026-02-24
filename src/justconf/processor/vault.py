@@ -527,7 +527,7 @@ class VaultProcessor(Processor):
             errors = _extract_vault_errors(e)
             detail = '; '.join(errors)
             if e.code == HTTPStatus.NOT_FOUND:
-                raise SecretNotFoundError(f'Secret not found: {path}: {detail}') from e
+                raise SecretNotFoundError(f'Secret not found: {path}') from e
             if e.code == HTTPStatus.UNAUTHORIZED:
                 raise AuthenticationError(
                     'Token is invalid or expired',

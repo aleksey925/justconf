@@ -67,21 +67,25 @@ def _create_ssl_context(verify: bool | str) -> ssl.SSLContext | None:
         raise FileNotFoundError(f'CA bundle file not found: {verify}') from None
 
 
-def _extract_vault_error(e: HTTPError) -> str:
+def _extract_vault_errors(e: HTTPError) -> list[str]:
     try:
         body = e.read().decode(errors='replace')
-    except Exception:
-        return str(e)
+    except Exception as exc:
+        return [f'failed to read response body: {exc}']
+
     if not body:
-        return str(e)
+        return [f'empty response body (HTTP {e.code})']
+
     try:
         data = json.loads(body)
-        errors = data.get('errors', [])
-        if errors:
-            return '; '.join(str(i) for i in errors)
+        errors = cast(list[str], data.get('errors', []))
+        if not errors:
+            errors = ['Unable to find error list in response body']
+            logger.warning('Error message not found in response: %s', body)
+        return errors
     except (json.JSONDecodeError, AttributeError):
-        pass
-    return body
+        logger.error('Failed to decode response from vault with error message: %s', body, exc_info=True)
+        return ['Failed to parse response body']
 
 
 def _urlopen_with_retry(
@@ -177,7 +181,10 @@ class TokenAuth(VaultAuth):
                 return self.token, ttl
         except HTTPError as e:
             if e.code in (HTTPStatus.FORBIDDEN, HTTPStatus.UNAUTHORIZED):
-                raise AuthenticationError(f'Token authentication failed: {_extract_vault_error(e)}') from e
+                raise AuthenticationError(
+                    'Token authentication failed',
+                    detail=_extract_vault_errors(e),
+                ) from e
             raise
 
 
@@ -231,7 +238,10 @@ class AppRoleAuth(VaultAuth):
         except HTTPError as e:
             if e.code in RETRYABLE_HTTP_STATUS_CODES:
                 raise
-            raise AuthenticationError(f'AppRole authentication failed: {_extract_vault_error(e)}') from e
+            raise AuthenticationError(
+                'AppRole authentication failed',
+                detail=_extract_vault_errors(e),
+            ) from e
         except KeyError as e:
             raise AuthenticationError(f'Invalid response from Vault: {e}') from e
 
@@ -286,7 +296,10 @@ class JwtAuth(VaultAuth):
         except HTTPError as e:
             if e.code in RETRYABLE_HTTP_STATUS_CODES:
                 raise
-            raise AuthenticationError(f'JWT authentication failed: {_extract_vault_error(e)}') from e
+            raise AuthenticationError(
+                'JWT authentication failed',
+                detail=_extract_vault_errors(e),
+            ) from e
         except KeyError as e:
             raise AuthenticationError(f'Invalid response from Vault: {e}') from e
 
@@ -350,7 +363,10 @@ class KubernetesAuth(VaultAuth):
         except HTTPError as e:
             if e.code in RETRYABLE_HTTP_STATUS_CODES:
                 raise
-            raise AuthenticationError(f'Kubernetes authentication failed: {_extract_vault_error(e)}') from e
+            raise AuthenticationError(
+                'Kubernetes authentication failed',
+                detail=_extract_vault_errors(e),
+            ) from e
         except KeyError as e:
             raise AuthenticationError(f'Invalid response from Vault: {e}') from e
 
@@ -400,7 +416,10 @@ class UserpassAuth(VaultAuth):
         except HTTPError as e:
             if e.code in RETRYABLE_HTTP_STATUS_CODES:
                 raise
-            raise AuthenticationError(f'Userpass authentication failed: {_extract_vault_error(e)}') from e
+            raise AuthenticationError(
+                'Userpass authentication failed',
+                detail=_extract_vault_errors(e),
+            ) from e
         except KeyError as e:
             raise AuthenticationError(f'Invalid response from Vault: {e}') from e
 
@@ -473,7 +492,7 @@ class VaultProcessor(Processor):
                     self.url, self.timeout, self._ssl_context, retries=self.retries, backoff_factor=self.backoff_factor
                 )
             except AuthenticationError as e:
-                logger.warning('Authentication through "%s" failed with error:\n%s', auth, e)
+                logger.warning('Authentication through "%s" failed with errors: [%s]', auth, '; '.join(e.detail))
                 errors[auth] = e
 
         raise NoValidAuthError(errors)
@@ -506,11 +525,15 @@ class VaultProcessor(Processor):
             ) as resp:
                 return cast(dict[str, Any], json.loads(resp.read()))
         except HTTPError as e:
-            detail = _extract_vault_error(e)
+            errors = _extract_vault_errors(e)
+            detail = '; '.join(errors)
             if e.code == HTTPStatus.NOT_FOUND:
                 raise SecretNotFoundError(f'Secret not found: {path}: {detail}') from e
             if e.code == HTTPStatus.UNAUTHORIZED:
-                raise AuthenticationError(f'Token is invalid or expired: {detail}') from e
+                raise AuthenticationError(
+                    'Token is invalid or expired',
+                    detail=errors,
+                ) from e
             if e.code == HTTPStatus.FORBIDDEN:
                 raise AccessDeniedError(f'Access denied for {path}: {detail}') from e
             raise

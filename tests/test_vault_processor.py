@@ -25,7 +25,7 @@ from justconf.processor.vault import (
     _detect_kubernetes_auth,
     _detect_token_auth,
     _detect_userpass_auth,
-    _extract_vault_error,
+    _extract_vault_errors,
     _urlopen_with_retry,
 )
 
@@ -1330,68 +1330,97 @@ class TestVaultAuthFromEnv:
         assert isinstance(result[4], UserpassAuth)
 
 
-class TestExtractVaultError:
-    def test_extract_vault_error__vault_json_with_errors__returns_joined(self):
+class TestExtractVaultErrors:
+    def test_extract_vault_errors__vault_json_with_errors__returns_list(self):
         # arrange
         error = create_http_error(HTTPStatus.BAD_REQUEST, body=b'{"errors": ["missing client token"]}')
 
         # act
-        result = _extract_vault_error(error)
+        result = _extract_vault_errors(error)
 
         # assert
-        assert result == 'missing client token'
+        assert result == ['missing client token']
 
-    def test_extract_vault_error__multiple_errors__returns_semicolon_joined(self):
+    def test_extract_vault_errors__multiple_errors__returns_list(self):
         # arrange
         error = create_http_error(HTTPStatus.BAD_REQUEST, body=b'{"errors": ["error one", "error two"]}')
 
         # act
-        result = _extract_vault_error(error)
+        result = _extract_vault_errors(error)
 
         # assert
-        assert result == 'error one; error two'
+        assert result == ['error one', 'error two']
 
-    def test_extract_vault_error__invalid_json__returns_raw_body(self):
+    def test_extract_vault_errors__invalid_json__returns_raw_body(self):
         # arrange
         error = create_http_error(HTTPStatus.BAD_REQUEST, body=b'not json at all')
 
         # act
-        result = _extract_vault_error(error)
+        result = _extract_vault_errors(error)
 
         # assert
-        assert result == 'not json at all'
+        assert result == ['Failed to parse response body']
 
-    def test_extract_vault_error__empty_body__returns_str_of_error(self):
+    def test_extract_vault_errors__unreadable_body__returns_descriptive_message(self):
+        # arrange
+        error = create_http_error(HTTPStatus.BAD_REQUEST)
+        error.read = MagicMock(side_effect=OSError('connection reset'))
+
+        # act
+        result = _extract_vault_errors(error)
+
+        # assert
+        assert result == ['failed to read response body: connection reset']
+
+    def test_extract_vault_errors__empty_body__returns_descriptive_message(self):
         # arrange
         error = create_http_error(HTTPStatus.BAD_REQUEST)
 
         # act
-        result = _extract_vault_error(error)
+        result = _extract_vault_errors(error)
 
         # assert
-        assert result == str(error)
+        assert result == [f'empty response body (HTTP {HTTPStatus.BAD_REQUEST})']
 
-    def test_extract_vault_error__json_without_errors_key__returns_raw_body(self):
+    def test_extract_vault_errors__json_without_errors_key__returns_empty_list(self):
         # arrange
         body = b'{"message": "something went wrong"}'
         error = create_http_error(HTTPStatus.BAD_REQUEST, body=body)
 
         # act
-        result = _extract_vault_error(error)
+        result = _extract_vault_errors(error)
 
         # assert
-        assert result == body.decode()
+        assert result == ['Unable to find error list in response body']
 
-    def test_extract_vault_error__empty_errors_list__returns_raw_body(self):
+
+class TestAuthenticationErrorDetail:
+    def test_detail__vault_http_error__contains_raw_errors(self):
         # arrange
-        body = b'{"errors": []}'
-        error = create_http_error(HTTPStatus.BAD_REQUEST, body=body)
+        auth = TokenAuth(token='invalid')
 
-        # act
-        result = _extract_vault_error(error)
+        # act & assert
+        with patch('urllib.request.urlopen') as mock_urlopen:
+            mock_urlopen.side_effect = create_http_error(
+                HTTPStatus.FORBIDDEN,
+                body=b'{"errors": ["permission denied", "token expired"]}',
+            )
+            with pytest.raises(AuthenticationError) as exc_info:
+                auth.authenticate('http://vault:8200')
 
         # assert
-        assert result == body.decode()
+        assert exc_info.value.detail == ['permission denied', 'token expired']
+
+    def test_detail__validation_error__defaults_to_message(self):
+        # arrange
+        auth = TokenAuth(token='')
+
+        # act & assert
+        with pytest.raises(AuthenticationError) as exc_info:
+            auth.authenticate('http://vault:8200')
+
+        # assert
+        assert exc_info.value.detail == ['Token is empty']
 
 
 # fixtures and helpers

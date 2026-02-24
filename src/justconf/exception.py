@@ -24,6 +24,10 @@ class SecretNotFoundError(ProcessorError):
 class AuthenticationError(ProcessorError):
     """Authentication failed."""
 
+    def __init__(self, message: str, detail: list[str] | None = None):
+        self.detail = detail if detail is not None else [message]
+        super().__init__(f'{message}: {"; ".join(self.detail)}' if detail else message)
+
 
 class AccessDeniedError(ProcessorError):
     """Access to the secret is denied by Vault policy."""

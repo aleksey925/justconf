@@ -9,6 +9,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from http import HTTPStatus
+from http.client import HTTPResponse
 from typing import Any, Literal, cast
 from urllib.error import HTTPError, URLError
 
@@ -94,16 +95,19 @@ def _urlopen_with_retry(
     ssl_context: ssl.SSLContext | None = None,
     retries: int = DEFAULT_RETRIES,
     backoff_factor: float = DEFAULT_BACKOFF_FACTOR,
-) -> Any:
-    max_attempts = 1 + retries
+) -> HTTPResponse:
+    max_attempts = max(1, 1 + retries)
+    last_error: URLError | None = None
     for attempt in range(max_attempts):
         try:
-            return urllib.request.urlopen(request, timeout=timeout, context=ssl_context)
+            resp: HTTPResponse = urllib.request.urlopen(request, timeout=timeout, context=ssl_context)
+            return resp
         except URLError as e:
             if isinstance(e, HTTPError) and e.code not in RETRYABLE_HTTP_STATUS_CODES:
                 raise
             if attempt == max_attempts - 1:
                 raise
+            last_error = e
             delay = backoff_factor * 2**attempt
             detail = f'HTTP {e.code}' if isinstance(e, HTTPError) else str(e)
             logger.warning(
@@ -115,6 +119,9 @@ def _urlopen_with_retry(
                 max_attempts,
             )
             time.sleep(delay)
+
+    # required to make mypy happy
+    raise last_error  # type: ignore[misc]
 
 
 class VaultAuth(ABC):
@@ -167,7 +174,6 @@ class TokenAuth(VaultAuth):
         if not self.token:
             raise AuthenticationError('Token is empty')
 
-        # lookup token to get TTL
         try:
             req = urllib.request.Request(
                 f'{vault_url}/v1/auth/token/lookup-self',
@@ -454,6 +460,9 @@ class VaultProcessor(Processor):
             raise ValueError(f'Invalid Vault URL scheme: {parsed.scheme!r}. Must be http or https.')
         if not parsed.netloc:
             raise ValueError(f'Invalid Vault URL: missing host in {url!r}')
+
+        if retries < 0:
+            raise ValueError(f'retries must be >= 0, got {retries}')
 
         self.url = url.rstrip('/')
         self.auth_methods = auth if isinstance(auth, list) else [auth]

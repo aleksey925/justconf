@@ -23,7 +23,7 @@ from justconf.processor.base import Processor
 DEFAULT_TIMEOUT = 30
 DEFAULT_RETRIES = 3
 DEFAULT_BACKOFF_FACTOR = 0.5
-RETRYABLE_HTTP_STATUS_CODES: frozenset[int] = frozenset({500, 502, 503})
+RETRYABLE_HTTP_STATUS_CODES: frozenset[int] = frozenset({500, 502, 503, 504})
 TOKEN_REFRESH_BUFFER_SECONDS = 30
 KUBERNETES_SA_TOKEN_PATH = '/var/run/secrets/kubernetes.io/serviceaccount/token'  # noqa: S105
 
@@ -180,12 +180,10 @@ class TokenAuth(VaultAuth):
                 ttl = data.get('data', {}).get('ttl', 3600)
                 return self.token, ttl
         except HTTPError as e:
-            if e.code in (HTTPStatus.FORBIDDEN, HTTPStatus.UNAUTHORIZED):
-                raise AuthenticationError(
-                    'Token authentication failed',
-                    detail=_extract_vault_errors(e),
-                ) from e
-            raise
+            raise AuthenticationError(
+                'Token authentication failed',
+                detail=_extract_vault_errors(e),
+            ) from e
 
 
 class AppRoleAuth(VaultAuth):
@@ -236,8 +234,6 @@ class AppRoleAuth(VaultAuth):
                 auth = data.get('auth', {})
                 return auth['client_token'], auth.get('lease_duration', 3600)
         except HTTPError as e:
-            if e.code in RETRYABLE_HTTP_STATUS_CODES:
-                raise
             raise AuthenticationError(
                 'AppRole authentication failed',
                 detail=_extract_vault_errors(e),
@@ -294,8 +290,6 @@ class JwtAuth(VaultAuth):
                 auth = data.get('auth', {})
                 return auth['client_token'], auth.get('lease_duration', 3600)
         except HTTPError as e:
-            if e.code in RETRYABLE_HTTP_STATUS_CODES:
-                raise
             raise AuthenticationError(
                 'JWT authentication failed',
                 detail=_extract_vault_errors(e),
@@ -361,8 +355,6 @@ class KubernetesAuth(VaultAuth):
                 auth = data.get('auth', {})
                 return auth['client_token'], auth.get('lease_duration', 3600)
         except HTTPError as e:
-            if e.code in RETRYABLE_HTTP_STATUS_CODES:
-                raise
             raise AuthenticationError(
                 'Kubernetes authentication failed',
                 detail=_extract_vault_errors(e),
@@ -414,8 +406,6 @@ class UserpassAuth(VaultAuth):
                 auth = data.get('auth', {})
                 return auth['client_token'], auth.get('lease_duration', 3600)
         except HTTPError as e:
-            if e.code in RETRYABLE_HTTP_STATUS_CODES:
-                raise
             raise AuthenticationError(
                 'Userpass authentication failed',
                 detail=_extract_vault_errors(e),
@@ -453,7 +443,7 @@ class VaultProcessor(Processor):
             timeout: Request timeout in seconds.
             verify: SSL certificate verification. True (default) uses system CA,
                     False disables verification, or path to CA bundle file.
-            retries: Number of retries for transient HTTP errors (500, 502, 503).
+            retries: Number of retries for transient HTTP errors (500, 502, 503, 504).
             backoff_factor: Multiplier for exponential backoff between retries.
 
         Raises:

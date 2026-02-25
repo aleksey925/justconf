@@ -41,6 +41,7 @@ dev = [
   "mypy==1.19.1",
   "prek==0.2.30",
   "pydantic>=2",
+  "pyproject-fmt==2.12.1",
   "pytest>=7",
   "pytest-cov",
   "ruff==0.14.13",

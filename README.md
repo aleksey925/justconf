@@ -174,14 +174,23 @@ result = process(config, [processor])
 > The path from placeholder matches Vault's HTTP API exactly (`GET /v1/{path}`).
 > For KV v2, this means `{mount}/data/{secret_path}`.
 
-In the example, `secret/data/db` is the Vault path — taken from the UI URL
-with `show` replaced by `data`. The `#password` is the field name inside the secret.
+In the example, `secret/data/db` is the Vault path. The `#password` is the field
+name inside the secret. To construct the path from the Vault UI URL, identify the
+mount point and secret path:
 
 ```
-Vault UI URL:  https://vault.example.com/ui/vault/secrets/secret/show/db
-                                                          ~~~~~~     ~~~
+Vault < 1.15:  https://vault.example.com/ui/vault/secrets/secret/show/db
+                                                          ~~~~~~     ~~
                                                           mount      secret path
+
+Vault >= 1.15: https://vault.example.com/ui/vault/secrets/secret/kv/db/details
+                                                          ~~~~~~    ~~
+                                                          mount     secret path
+
+API path:      secret/data/db
 ```
+
+Regardless of the UI URL format, the placeholder path is always `{mount}/data/{secret_path}`.
 
 Since the full path is specified in the placeholder, you can fetch secrets from
 different mount points in a single config (e.g., secret/data/..., team-kv/data/...)
@@ -251,7 +260,7 @@ if auths:
 # Or use fallback chain
 processor = VaultProcessor(
     url="http://vault:8200",
-    auth=auths,  # VaultProcessor accepts list
+    auth=auths,
 )
 
 # Explicit method selection
@@ -280,7 +289,6 @@ config = {
 
 result = process(config, [processor])
 # {"tls_cert": "/etc/ssl/cert.pem", "tls_key": "/etc/ssl/key.pem"}
-# Files are created with the secret content
 ```
 
 If the value is a dict or list, it's serialized as JSON.
@@ -297,10 +305,11 @@ across config files.
 from typing import Annotated
 from pydantic import BaseModel
 from justconf import merge, process, toml_loader
+from justconf.processor import VaultProcessor, TokenAuth
 from justconf.schema import Placeholder, extract_placeholders
 
 class DatabaseConfig(BaseModel):
-    host: str = "localhost"  # static default
+    host: str = "localhost"
     port: int = 5432
     password: Annotated[str, Placeholder("${vault:secret/data/db/creds#password}")]
 
@@ -318,7 +327,8 @@ config = merge(
     toml_loader("config.toml"),
 )
 
-# Resolve placeholders (vault_processor created as shown in Processors section)
+# Resolve placeholders
+vault_processor = VaultProcessor(url=..., auth=TokenAuth(token=...))
 config = process(config, [vault_processor])
 
 # Validate
@@ -350,7 +360,6 @@ extract_placeholders(ServiceConfig)  # {'api_key': '${vault:secret/data/service#
 Schema placeholders have the lowest priority. Override them in config files or environment:
 
 ```toml
-# config.toml - overrides schema default
 [database]
 password = "${vault:secret/data/staging/db#password}"
 ```
@@ -399,19 +408,54 @@ result = extract_placeholders(AppConfig)
 - Validates that all keys exist in the target type (raises `PlaceholderError` for invalid keys)
 - Works with `Optional[NestedType]` / `NestedType | None`
 
+### Auto-Unpack Entire Value
+
+When a placeholder omits the `#key` part, the processor returns the entire value as a dictionary
+instead of extracting a single field. This is useful when all fields of a nested type are stored
+together under one path:
+
+```python
+from typing import Annotated
+from pydantic import BaseModel
+from justconf import process
+from justconf.processor import VaultProcessor, TokenAuth
+from justconf.schema import Placeholder, extract_placeholders
+
+class DatabaseConfig(BaseModel):
+    host: str
+    port: int
+    username: str
+    password: str
+
+class AppConfig(BaseModel):
+    db: Annotated[DatabaseConfig, Placeholder("${vault:secret/data/db}")]
+
+vault_processor = VaultProcessor(url=..., auth=TokenAuth(token=...))
+config = extract_placeholders(AppConfig)
+config = process(config, [vault_processor])
+# {'db': {'host': 'db.example.com', 'port': 5432, 'username': 'admin', 'password': 'secret'}}
+app_config = AppConfig(**config)
+```
+
 ## Migration from pydantic-settings
 
 ### Basic Settings
 
 **Before (pydantic-settings):**
 ```python
+from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+class DatabaseConfig(BaseModel):
+    host: str = "localhost"
+    port: int = 5432
+
 class AppConfig(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="APP_")
+    model_config = SettingsConfigDict(env_prefix="APP_", env_nested_delimiter="__")
 
     debug: bool = False
     port: int = 8080
+    database: DatabaseConfig = DatabaseConfig()
 
 config = AppConfig()
 ```
@@ -421,47 +465,16 @@ config = AppConfig()
 from pydantic import BaseModel
 from justconf import merge, env_loader
 
+class DatabaseConfig(BaseModel):
+    host: str = "localhost"
+    port: int = 5432
+
 class AppConfig(BaseModel):
     debug: bool = False
     port: int = 8080
+    database: DatabaseConfig = DatabaseConfig()
 
 config = AppConfig(**merge(env_loader(prefix="APP")))
-```
-
-### Nested Settings
-
-**Before (pydantic-settings):**
-```python
-from pydantic import BaseModel
-from pydantic_settings import BaseSettings, SettingsConfigDict
-
-class DatabaseConfig(BaseModel):
-    host: str = "localhost"
-    port: int = 5432
-
-class AppConfig(BaseSettings):
-    model_config = SettingsConfigDict(env_nested_delimiter="__")
-
-    database: DatabaseConfig = DatabaseConfig()
-
-# Requires: DATABASE__HOST=prod-db DATABASE__PORT=5433
-config = AppConfig()
-```
-
-**After (justconf):**
-```python
-from pydantic import BaseModel
-from justconf import merge, env_loader
-
-class DatabaseConfig(BaseModel):
-    host: str = "localhost"
-    port: int = 5432
-
-class AppConfig(BaseModel):
-    database: DatabaseConfig = DatabaseConfig()
-
-# Same env vars work: DATABASE__HOST=prod-db DATABASE__PORT=5433
-config = AppConfig(**merge(env_loader()))
 ```
 
 ### With Vault Secrets
@@ -504,7 +517,7 @@ class AppConfig(BaseSettings):
             file_secret_settings,
         )
 
-config = AppConfig()  # auth from VAULT_TOKEN env
+config = AppConfig()
 ```
 
 **After (justconf):**
@@ -523,20 +536,46 @@ config = merge(extract_placeholders(AppConfig), env_loader())
 
 vault = VaultProcessor(
     url="http://vault:8200",
-    auth=vault_auth_from_env(),  # all detected methods as fallback chain
+    auth=vault_auth_from_env(),
 )
 config = AppConfig(**process(config, [vault]))
 ```
 
+### Environment Variable Changes
+
+If you used `pydantic-settings-vault`, note these environment variable differences:
+
+| pydantic-settings-vault  | justconf                      | Notes                                             |
+|--------------------------|-------------------------------|---------------------------------------------------|
+| `VAULT_AUTH_MOUNT_POINT` | `VAULT_APPROLE_MOUNT_PATH`    | Per-method variable for AppRole                   |
+| `VAULT_AUTH_MOUNT_POINT` | `VAULT_KUBERNETES_MOUNT_PATH` | Per-method variable for Kubernetes                |
+| `VAULT_AUTH_PATH`        | `VAULT_JWT_MOUNT_PATH`        | Per-method variable for JWT                       |
+| `VAULT_ADDR`             | —                             | Pass URL explicitly via `VaultProcessor(url=...)` |
+| `VAULT_NAMESPACE`        | —                             | Not supported                                     |
+| `VAULT_CA_BUNDLE`        | —                             | Pass explicitly via `VaultProcessor(verify=...)`  |
+
+In `pydantic-settings-vault`, a single `VAULT_AUTH_MOUNT_POINT` variable is shared across all
+authentication methods. In `justconf`, each method has its own variable
+(`VAULT_APPROLE_MOUNT_PATH`, `VAULT_KUBERNETES_MOUNT_PATH`, `VAULT_JWT_MOUNT_PATH`), which allows
+setting different mount paths for different methods in a fallback chain.
+
+The `~/.vault-token` file is not read automatically — the token must be passed explicitly via
+`TokenAuth(token=...)` or the `VAULT_TOKEN` environment variable.
+
+Authentication method auto-detection priority also differs: `pydantic-settings-vault` uses
+Token → Kubernetes → AppRole → JWT, while `justconf` uses AppRole → Kubernetes → Token → JWT → Userpass.
+In practice this rarely matters, since typically only one method is configured.
+
 ### Key Differences
 
-| pydantic-settings                | justconf                                    |
-|----------------------------------|---------------------------------------------|
-| `BaseSettings` class inheritance | Plain `BaseModel` + loaders                 |
-| `env_prefix` in model config     | `prefix` parameter in `env_loader()`        |
-| `env_nested_delimiter="__"`      | `__` is the delimiter by default            |
-| Field-level vault config         | Placeholders in schema or any config source |
-| Implicit env loading             | Explicit `merge()` of sources               |
+| pydantic-settings                 | justconf                                                          |
+|-----------------------------------|-------------------------------------------------------------------|
+| `BaseSettings` class inheritance  | Plain `BaseModel` + loaders                                       |
+| `env_prefix` in model config      | `prefix` parameter in `env_loader()`                              |
+| `env_nested_delimiter="__"`       | `__` is the delimiter by default                                  |
+| Field-level vault config          | Placeholders in schema or any config source                       |
+| Implicit env loading              | Explicit `merge()` of sources                                     |
+| `VAULT_AUTH_MOUNT_POINT` (shared) | Per-method mount path env vars (`VAULT_APPROLE_MOUNT_PATH`, etc.) |
 
 ## Development
 

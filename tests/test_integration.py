@@ -272,20 +272,26 @@ nested = { a = 1, b = 2 }
 class TestNoValidAuthErrorStructure:
     def test_errors_attribute__contains_all_errors(self):
         # arrange
-        errors = [
-            ValueError('Error 1'),
-            TypeError('Error 2'),
-            RuntimeError('Error 3'),
-        ]
+        class AuthMethodOne: ...
+
+        class AuthMethodTwo: ...
+
+        class AuthMethodThree: ...
+
+        errors = {
+            AuthMethodOne(): ValueError('Error 1'),
+            AuthMethodTwo(): TypeError('Error 2'),
+            AuthMethodThree(): RuntimeError('Error 3'),
+        }
 
         # act
         exc = NoValidAuthError(errors)
 
         # assert
         assert exc.errors == errors
-        assert 'ValueError' in str(exc)
-        assert 'TypeError' in str(exc)
-        assert 'RuntimeError' in str(exc)
+        assert 'AuthMethodOne' in str(exc)
+        assert 'AuthMethodTwo' in str(exc)
+        assert 'AuthMethodThree' in str(exc)
 
 
 # fixtures

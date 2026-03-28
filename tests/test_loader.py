@@ -28,7 +28,7 @@ class TestEnvLoader:
         monkeypatch.setenv('OTHER_VAR', 'ignored')
 
         # act
-        result = env_loader(prefix='APP')
+        result = env_loader(prefix='APP_')
 
         # assert
         assert result == {'database_host': 'localhost', 'debug': 'true'}
@@ -38,7 +38,7 @@ class TestEnvLoader:
         monkeypatch.setenv('APP_Database_HOST', 'localhost')
 
         # act
-        result = env_loader(prefix='APP', case_sensitive=False)
+        result = env_loader(prefix='APP_', case_sensitive=False)
 
         # assert
         assert result == {'database_host': 'localhost'}
@@ -48,7 +48,7 @@ class TestEnvLoader:
         monkeypatch.setenv('APP_Database_HOST', 'localhost')
 
         # act
-        result = env_loader(prefix='APP', case_sensitive=True)
+        result = env_loader(prefix='APP_', case_sensitive=True)
 
         # assert
         assert result == {'Database_HOST': 'localhost'}
@@ -59,7 +59,7 @@ class TestEnvLoader:
         monkeypatch.setenv('APP_DATABASE__PORT', '5432')
 
         # act
-        result = env_loader(prefix='APP')
+        result = env_loader(prefix='APP_')
 
         # assert
         assert result == {'database': {'host': 'localhost', 'port': '5432'}}
@@ -69,7 +69,7 @@ class TestEnvLoader:
         monkeypatch.setenv('APP_LEVEL1__LEVEL2__LEVEL3', 'deep_value')
 
         # act
-        result = env_loader(prefix='APP')
+        result = env_loader(prefix='APP_')
 
         # assert
         assert result == {'level1': {'level2': {'level3': 'deep_value'}}}
@@ -79,7 +79,7 @@ class TestEnvLoader:
         monkeypatch.setenv('APP_DEBUG', '')
 
         # act
-        result = env_loader(prefix='APP')
+        result = env_loader(prefix='APP_')
 
         # assert
         assert result == {'debug': ''}
@@ -90,7 +90,7 @@ class TestEnvLoader:
         monkeypatch.setenv('APP_VALID', 'valid_value')
 
         # act
-        result = env_loader(prefix='APP')
+        result = env_loader(prefix='APP_')
 
         # assert
         assert result == {'valid': 'valid_value'}
@@ -100,7 +100,7 @@ class TestEnvLoader:
         monkeypatch.setenv('OTHER_VAR', 'value')
 
         # act
-        result = env_loader(prefix='APP')
+        result = env_loader(prefix='APP_')
 
         # assert
         assert result == {}
@@ -110,7 +110,7 @@ class TestEnvLoader:
         monkeypatch.setenv('app_debug', 'true')
 
         # act
-        result = env_loader(prefix='APP', case_sensitive=False)
+        result = env_loader(prefix='APP_', case_sensitive=False)
 
         # assert
         assert result == {'debug': 'true'}
@@ -131,7 +131,7 @@ class TestEnvLoader:
         monkeypatch.setenv('APP_Database__Port', '5432')
 
         # act
-        result = env_loader(prefix='APP', case_sensitive=True)
+        result = env_loader(prefix='APP_', case_sensitive=True)
 
         # assert
         assert result == {'Database': {'Host': 'localhost', 'Port': '5432'}}
@@ -142,7 +142,7 @@ class TestEnvLoader:
         monkeypatch.setenv('app_VALUE', 'ignored')
 
         # act
-        result = env_loader(prefix='APP', case_sensitive=True)
+        result = env_loader(prefix='APP_', case_sensitive=True)
 
         # assert
         assert result == {'VALUE': 'correct'}
@@ -153,10 +153,76 @@ class TestEnvLoader:
         monkeypatch.setenv('APP_DB__HOST', 'localhost')
 
         # act
-        result = env_loader(prefix='APP')
+        result = env_loader(prefix='APP_')
 
         # assert (nested key overwrites scalar)
         assert result == {'db': {'host': 'localhost'}}
+
+    def test_env_loader__prefix_without_separator__concatenates_directly(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('APPDEBUG', 'true')
+        monkeypatch.setenv('APPPORT', '8080')
+        monkeypatch.setenv('OTHER_VAR', 'ignored')
+
+        # act
+        result = env_loader(prefix='APP')
+
+        # assert
+        assert result['debug'] == 'true'
+        assert result['port'] == '8080'
+        assert 'other_var' not in result
+
+    def test_env_loader__custom_delimiter__uses_dot(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('APP_DATABASE.HOST', 'localhost')
+        monkeypatch.setenv('APP_DATABASE.PORT', '5432')
+
+        # act
+        result = env_loader(prefix='APP_', nested_delimiter='.')
+
+        # assert
+        assert result == {'database': {'host': 'localhost', 'port': '5432'}}
+
+    def test_env_loader__nested_delimiter_none__flat_keys(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('APP_DATABASE__HOST', 'localhost')
+
+        # act
+        result = env_loader(prefix='APP_', nested_delimiter=None)
+
+        # assert
+        assert result == {'database__host': 'localhost'}
+
+    def test_env_loader__nested_max_split__limits_depth(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('APP_A__B__C__D', 'value')
+
+        # act
+        result = env_loader(prefix='APP_', nested_max_split=2)
+
+        # assert
+        assert result == {'a': {'b__c__d': 'value'}}
+
+    def test_env_loader__nested_max_split_zero__no_nesting(self, monkeypatch):
+        # arrange
+        monkeypatch.setenv('APP_A__B__C__D', 'value')
+
+        # act
+        result = env_loader(prefix='APP_', nested_max_split=0)
+
+        # assert
+        assert result == {'a__b__c__d': 'value'}
+
+    @pytest.mark.parametrize('max_split', [None, -1])
+    def test_env_loader__nested_max_split__unlimited_nesting(self, monkeypatch, max_split):
+        # arrange
+        monkeypatch.setenv('APP_A__B__C__D', 'value')
+
+        # act
+        result = env_loader(prefix='APP_', nested_max_split=max_split)
+
+        # assert
+        assert result == {'a': {'b': {'c': {'d': 'value'}}}}
 
 
 class TestDotenvLoader:
@@ -177,7 +243,7 @@ class TestDotenvLoader:
         env_file.write_text('APP_DEBUG=true\nOTHER=ignored\n')
 
         # act
-        result = dotenv_loader(str(env_file), prefix='APP')
+        result = dotenv_loader(str(env_file), prefix='APP_')
 
         # assert
         assert result == {'debug': 'true'}
@@ -188,7 +254,7 @@ class TestDotenvLoader:
         env_file.write_text('APP_Database=value\n')
 
         # act
-        result = dotenv_loader(str(env_file), prefix='APP', case_sensitive=True)
+        result = dotenv_loader(str(env_file), prefix='APP_', case_sensitive=True)
 
         # assert
         assert result == {'Database': 'value'}

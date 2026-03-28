@@ -29,7 +29,7 @@ debug = false
 
         # act
         base_config = toml_loader(str(toml_file))
-        env_config = env_loader(prefix='APP')
+        env_config = env_loader(prefix='APP_')
         merged = merge(base_config, env_config)
         result = process(merged, [processor])
 
@@ -104,7 +104,7 @@ DB__PORT=3306
         # act (toml < dotenv < env)
         toml_config = toml_loader(str(toml_file))
         dotenv_config = dotenv_loader(str(env_file))
-        env_config = env_loader(prefix='APP')
+        env_config = env_loader(prefix='APP_')
         result = merge(toml_config, dotenv_config, env_config)
 
         # assert

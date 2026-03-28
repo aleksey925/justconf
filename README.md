@@ -64,7 +64,7 @@ class AppConfig(BaseModel):
 config = merge(
     extract_placeholders(AppConfig),  # schema defaults with placeholders
     toml_loader("config.toml"),       # base config file
-    env_loader(prefix="APP"),         # environment overrides
+    env_loader(prefix="APP_"),        # environment overrides
 )
 
 # Resolve secrets from Vault
@@ -82,15 +82,15 @@ app_config = AppConfig(**config)
 
 Loaders fetch configuration from various sources and return a dictionary.
 
-- **env_loader(prefix=None, case_sensitive=False)** — loads from environment variables. If `prefix` is set, filters variables by prefix and strips it from keys.
+- **env_loader(prefix=None, case_sensitive=False, nested_delimiter="\_\_", nested_max_split=None)** — loads from environment variables. If `prefix` is set, filters variables by prefix and strips it from keys. The prefix is matched exactly as given — include the separator if needed (e.g. `"APP_"`).
   ```python
-  config = env_loader(prefix="APP")
+  config = env_loader(prefix="APP_")
   # APP_DEBUG=true, APP_PORT=8080 -> {"debug": "true", "port": "8080"}
   ```
 
-- **dotenv_loader(path=".env", prefix=None, case_sensitive=False, encoding="utf-8")** — loads from `.env` file. Requires `pip install justconf[dotenv]`. Supports variable interpolation (`${VAR}`).
+- **dotenv_loader(path=".env", prefix=None, case_sensitive=False, nested_delimiter="\_\_", nested_max_split=None, encoding="utf-8")** — loads from `.env` file. Requires `pip install justconf[dotenv]`. Supports variable interpolation (`${VAR}`).
   ```python
-  config = dotenv_loader(".env", prefix="APP")
+  config = dotenv_loader(".env", prefix="APP_")
   ```
 
 - **toml_loader(path="config.toml", encoding="utf-8")** — loads from TOML file using Python's built-in `tomllib`. Native TOML types are preserved (int, float, bool, list, dict, datetime).
@@ -100,7 +100,7 @@ Loaders fetch configuration from various sources and return a dictionary.
 
 ### Nested Configuration
 
-Use double underscores (`__`) to create nested structures from flat environment variables:
+Use double underscores (`__`) to create nested structures from flat environment variables (default delimiter):
 
 ```bash
 export DATABASE__HOST=localhost
@@ -110,6 +110,31 @@ export DATABASE__PORT=5432
 ```python
 config = env_loader()
 # {"database": {"host": "localhost", "port": "5432"}}
+```
+
+The delimiter is configurable via `nested_delimiter`. Set it to `None` to disable nesting:
+
+```python
+# Use dot as delimiter
+config = env_loader(prefix="APP_", nested_delimiter=".")
+# APP_DATABASE.HOST=localhost -> {"database": {"host": "localhost"}}
+
+# Disable nesting entirely
+config = env_loader(prefix="APP_", nested_delimiter=None)
+# APP_DATABASE__HOST=localhost -> {"database__host": "localhost"}
+```
+
+Use `nested_max_split` to limit the number of parts when splitting by delimiter (`None` means unlimited, `0` disables nesting):
+
+```python
+config = env_loader(prefix="APP_", nested_max_split=0)
+# APP_A__B__C__D=value -> {"a__b__c__d": "value"}  (no splitting)
+
+config = env_loader(prefix="APP_", nested_max_split=2)
+# APP_A__B__C__D=value -> {"a": {"b__c__d": "value"}}  (split into 2 parts)
+
+config = env_loader(prefix="APP_", nested_max_split=3)
+# APP_A__B__C__D=value -> {"a": {"b": {"c__d": "value"}}}  (split into 3 parts)
 ```
 
 ## Merge
@@ -175,17 +200,23 @@ result = process(config, [processor])
 > For KV v2, this means `{mount}/data/{secret_path}`.
 
 In the example, `secret/data/db` is the Vault path. The `#password` is the field
-name inside the secret. To construct the path from the Vault UI URL, identify the
-mount point and secret path:
+name inside the secret.
+
+**Finding the path in Vault UI (≥ 1.15):** open the secret, go to the
+**Overview** tab (or the **Paths** tab), and copy the **API path**. Remove
+the `/v1/` prefix — the rest is your placeholder path:
 
 ```
-Vault < 1.15:  https://vault.example.com/ui/vault/secrets/secret/show/db
-                                                          ~~~~~~     ~~
-                                                          mount      secret path
+API path:      /v1/secret/data/db
+Placeholder:       secret/data/db   →  ${vault:secret/data/db#field}
+```
 
-Vault >= 1.15: https://vault.example.com/ui/vault/secrets/secret/kv/db/details
-                                                          ~~~~~~    ~~
-                                                          mount     secret path
+**Vault < 1.15** (no Paths tab): extract mount and secret path from the URL:
+
+```
+https://vault.example.com/ui/vault/secrets/secret/show/db
+                                            ~~~~~~     ~~
+                                            mount      secret path
 
 API path:      secret/data/db
 ```
@@ -474,7 +505,7 @@ class AppConfig(BaseModel):
     port: int = 8080
     database: DatabaseConfig = DatabaseConfig()
 
-config = AppConfig(**merge(env_loader(prefix="APP")))
+config = AppConfig(**merge(env_loader(prefix="APP_")))
 ```
 
 ### With Vault Secrets
@@ -568,14 +599,12 @@ In practice this rarely matters, since typically only one method is configured.
 
 ### Key Differences
 
-| pydantic-settings                 | justconf                                                          |
-|-----------------------------------|-------------------------------------------------------------------|
-| `BaseSettings` class inheritance  | Plain `BaseModel` + loaders                                       |
-| `env_prefix` in model config      | `prefix` parameter in `env_loader()`                              |
-| `env_nested_delimiter="__"`       | `__` is the delimiter by default                                  |
-| Field-level vault config          | Placeholders in schema or any config source                       |
-| Implicit env loading              | Explicit `merge()` of sources                                     |
-| `VAULT_AUTH_MOUNT_POINT` (shared) | Per-method mount path env vars (`VAULT_APPROLE_MOUNT_PATH`, etc.) |
+| pydantic-settings                   | justconf                                                          |
+|-------------------------------------|-------------------------------------------------------------------|
+| `BaseSettings` class inheritance    | Plain `BaseModel` + loaders                                       |
+| Field-level vault config            | Placeholders in schema or any config source                       |
+| Implicit env loading                | Explicit `merge()` of sources                                     |
+| `VAULT_AUTH_MOUNT_POINT` (shared)   | Per-method mount path env vars (`VAULT_APPROLE_MOUNT_PATH`, etc.) |
 
 ## Development
 

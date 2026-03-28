@@ -7,20 +7,32 @@ from justconf.exception import TomlLoadError
 
 def _strip_prefix(key: str, prefix: str, case_sensitive: bool) -> str | None:
     """Strip prefix from key if it matches. Returns None if no match."""
-    prefix_with_sep = f'{prefix}_'
     if case_sensitive:
-        if not key.startswith(prefix_with_sep):
+        if not key.startswith(prefix):
             return None
-        return key[len(prefix_with_sep) :]
+        return key[len(prefix) :]
 
-    if not key.lower().startswith(prefix_with_sep.lower()):
+    if not key.lower().startswith(prefix.lower()):
         return None
-    return key[len(prefix_with_sep) :]
+    return key[len(prefix) :]
 
 
-def _set_nested(result: dict[str, Any], key: str, value: str) -> None:
-    """Set a value in nested dict structure using __ as separator."""
-    parts = key.split('__')
+def _set_nested(
+    result: dict[str, Any],
+    key: str,
+    value: str,
+    delimiter: str | None,
+    max_split: int | None,
+) -> None:
+    """Set a value in nested dict structure using delimiter as separator."""
+    if delimiter is None:
+        result[key] = value
+        return
+
+    if max_split is None or max_split < 0:
+        parts = key.split(delimiter)
+    else:
+        parts = key.split(delimiter, max(max_split - 1, 0))
     current = result
     for part in parts[:-1]:
         if part not in current or not isinstance(current[part], dict):
@@ -33,6 +45,8 @@ def _parse_env_vars(
     env_vars: dict[str, str],
     prefix: str | None = None,
     case_sensitive: bool = False,
+    nested_delimiter: str | None = '__',
+    nested_max_split: int | None = None,
 ) -> dict[str, Any]:
     """Parse environment variables into a nested dictionary."""
     result: dict[str, Any] = {}
@@ -50,7 +64,7 @@ def _parse_env_vars(
         if not case_sensitive:
             key = key.lower()
 
-        _set_nested(result, key, value)
+        _set_nested(result, key, value, nested_delimiter, nested_max_split)
 
     return result
 
@@ -58,24 +72,32 @@ def _parse_env_vars(
 def env_loader(
     prefix: str | None = None,
     case_sensitive: bool = False,
+    nested_delimiter: str | None = '__',
+    nested_max_split: int | None = None,
 ) -> dict[str, Any]:
     """Load configuration from environment variables.
 
     Args:
-        prefix: Filter variables by prefix. If prefix="APP", only variables
-            starting with "APP_" are loaded, and the prefix is stripped.
+        prefix: Filter variables by prefix and strip it. The prefix is matched
+            exactly as given — include the separator if needed (e.g. "APP_").
         case_sensitive: If False (default), all keys are converted to lowercase.
+        nested_delimiter: Delimiter for creating nested dict structures.
+            Defaults to "__". Set to None to disable nesting.
+        nested_max_split: Maximum number of parts when splitting by nested
+            delimiter. None means unlimited. 0 disables nesting.
 
     Returns:
         Dictionary with configuration values. All values are strings.
     """
-    return _parse_env_vars(dict(os.environ), prefix, case_sensitive)
+    return _parse_env_vars(dict(os.environ), prefix, case_sensitive, nested_delimiter, nested_max_split)
 
 
 def dotenv_loader(
     path: str = '.env',
     prefix: str | None = None,
     case_sensitive: bool = False,
+    nested_delimiter: str | None = '__',
+    nested_max_split: int | None = None,
     encoding: str = 'utf-8',
 ) -> dict[str, Any]:
     """Load configuration from a .env file.
@@ -85,8 +107,13 @@ def dotenv_loader(
 
     Args:
         path: Path to .env file.
-        prefix: Filter variables by prefix (same as env_loader).
+        prefix: Filter variables by prefix and strip it. The prefix is matched
+            exactly as given — include the separator if needed (e.g. "APP_").
         case_sensitive: If False (default), all keys are converted to lowercase.
+        nested_delimiter: Delimiter for creating nested dict structures.
+            Defaults to "__". Set to None to disable nesting.
+        nested_max_split: Maximum number of parts when splitting by nested
+            delimiter. None means unlimited. 0 disables nesting.
         encoding: File encoding.
 
     Returns:
@@ -109,7 +136,7 @@ def dotenv_loader(
     raw_env_vars = dotenv_values(path, encoding=encoding)
     env_vars: dict[str, str] = {k: v for k, v in raw_env_vars.items() if v is not None}
 
-    return _parse_env_vars(env_vars, prefix, case_sensitive)
+    return _parse_env_vars(env_vars, prefix, case_sensitive, nested_delimiter, nested_max_split)
 
 
 def toml_loader(

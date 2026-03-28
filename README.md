@@ -200,17 +200,23 @@ result = process(config, [processor])
 > For KV v2, this means `{mount}/data/{secret_path}`.
 
 In the example, `secret/data/db` is the Vault path. The `#password` is the field
-name inside the secret. To construct the path from the Vault UI URL, identify the
-mount point and secret path:
+name inside the secret.
+
+**Finding the path in Vault UI (≥ 1.15):** open the secret, go to the
+**Overview** tab (or the **Paths** tab), and copy the **API path**. Remove
+the `/v1/` prefix — the rest is your placeholder path:
 
 ```
-Vault < 1.15:  https://vault.example.com/ui/vault/secrets/secret/show/db
-                                                          ~~~~~~     ~~
-                                                          mount      secret path
+API path:      /v1/secret/data/db
+Placeholder:       secret/data/db   →  ${vault:secret/data/db#field}
+```
 
-Vault >= 1.15: https://vault.example.com/ui/vault/secrets/secret/kv/db/details
-                                                          ~~~~~~    ~~
-                                                          mount     secret path
+**Vault < 1.15** (no Paths tab): extract mount and secret path from the URL:
+
+```
+https://vault.example.com/ui/vault/secrets/secret/show/db
+                                            ~~~~~~     ~~
+                                            mount      secret path
 
 API path:      secret/data/db
 ```

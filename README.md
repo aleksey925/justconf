@@ -25,6 +25,7 @@ Schema-agnostic: use your preferred validation library (Pydantic, msgspec, datac
 - [Merge](#merge)
 - [Processors](#processors)
 - [Schema Placeholders](#schema-placeholders)
+- [Using with pydantic-settings](#using-with-pydantic-settings)
 - [Migration from pydantic-settings](#migration-from-pydantic-settings)
 - [Development](#development)
 - [License](#license)
@@ -436,6 +437,43 @@ config = process(config, [vault_processor])
 # {'db': {'host': 'db.example.com', 'port': 5432, 'username': 'admin', 'password': 'secret'}}
 app_config = AppConfig(**config)
 ```
+
+## Using with pydantic-settings
+
+If you already use `pydantic-settings` and only need Vault secret resolution, you don't have
+to migrate. Install justconf alongside `pydantic-settings` and use `process()` to resolve
+secrets — it works independently from the rest of justconf:
+
+```python
+from typing import Annotated
+from pydantic import BaseModel
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from justconf import process
+from justconf.processor import VaultProcessor, vault_auth_from_env
+from justconf.schema import Placeholder, extract_placeholders
+
+class DatabaseConfig(BaseModel):
+    host: str = "localhost"
+    port: int = 5432
+    password: Annotated[str, Placeholder("${vault:secret/data/db#password}")]
+
+class AppConfig(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="APP_", env_nested_delimiter="__")
+
+    debug: bool = False
+    database: DatabaseConfig
+
+# Resolve Vault secrets
+vault = VaultProcessor(url="http://vault:8200", auth=vault_auth_from_env())
+secrets = process(extract_placeholders(AppConfig), [vault])
+
+# Init values have the highest priority in pydantic-settings
+config = AppConfig(**secrets)
+```
+
+`pydantic-settings` continues to handle environment variables, `.env` files, and everything else
+it normally does. justconf only resolves `${vault:...}` placeholders and passes the result as
+init kwargs.
 
 ## Migration from pydantic-settings
 

@@ -1,5 +1,4 @@
-justconf
-========
+# justconf
 
 [![license](https://img.shields.io/pypi/l/justconf?style=for-the-badge)](https://pypi.org/project/justconf/)
 [![python version](https://img.shields.io/pypi/pyversions/justconf?style=for-the-badge)](https://pypi.org/project/justconf/)
@@ -84,12 +83,14 @@ app_config = AppConfig(**config)
 Loaders fetch configuration from various sources and return a dictionary.
 
 - **env_loader(prefix=None, case_sensitive=False, nested_delimiter="\_\_", nested_max_split=None)** — loads from environment variables. If `prefix` is set, filters variables by prefix and strips it from keys. The prefix is matched exactly as given — include the separator if needed (e.g. `"APP_"`).
+
   ```python
   config = env_loader(prefix="APP_")
   # APP_DEBUG=true, APP_PORT=8080 -> {"debug": "true", "port": "8080"}
   ```
 
 - **dotenv_loader(path=".env", prefix=None, case_sensitive=False, nested_delimiter="\_\_", nested_max_split=None, encoding="utf-8")** — loads from `.env` file. Requires `pip install justconf[dotenv]`. Supports variable interpolation (`${VAR}`).
+
   ```python
   config = dotenv_loader(".env", prefix="APP_")
   ```
@@ -153,6 +154,7 @@ config = merge(
 ```
 
 **Merge strategy:**
+
 - `dict` + `dict` → recursive deep merge
 - Everything else (list, str, int, etc.) → overwrite
 
@@ -302,12 +304,12 @@ auths = vault_auth_from_env(method='approle')
 **Supported environment variables (in order of priority):**
 
 | Auth Method    | Required Variables                   | Mount Path Override                                 |
-|----------------|--------------------------------------|-----------------------------------------------------|
-| AppRoleAuth    | `VAULT_ROLE_ID` + `VAULT_SECRET_ID`  | `VAULT_APPROLE_MOUNT_PATH`    (default: approle)    |
+| -------------- | ------------------------------------ | --------------------------------------------------- |
+| AppRoleAuth    | `VAULT_ROLE_ID` + `VAULT_SECRET_ID`  | `VAULT_APPROLE_MOUNT_PATH` (default: approle)       |
 | KubernetesAuth | `VAULT_KUBERNETES_ROLE`              | `VAULT_KUBERNETES_MOUNT_PATH` (default: kubernetes) |
 | TokenAuth      | `VAULT_TOKEN`                        | —                                                   |
-| JwtAuth        | `VAULT_JWT_ROLE` + `VAULT_JWT_TOKEN` | `VAULT_JWT_MOUNT_PATH`        (default: jwt)        |
-| UserpassAuth   | `VAULT_USERNAME` + `VAULT_PASSWORD`  | `VAULT_USERPASS_MOUNT_PATH`   (default: userpass)   |
+| JwtAuth        | `VAULT_JWT_ROLE` + `VAULT_JWT_TOKEN` | `VAULT_JWT_MOUNT_PATH` (default: jwt)               |
+| UserpassAuth   | `VAULT_USERNAME` + `VAULT_PASSWORD`  | `VAULT_USERPASS_MOUNT_PATH` (default: userpass)     |
 
 #### File Modifier
 
@@ -511,6 +513,7 @@ init kwargs.
 ### Basic Settings
 
 **Before (pydantic-settings):**
+
 ```python
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -530,6 +533,7 @@ config = AppConfig()
 ```
 
 **After (justconf):**
+
 ```python
 from pydantic import BaseModel
 from justconf import merge, env_loader
@@ -549,6 +553,7 @@ config = AppConfig(**merge(env_loader(prefix="APP_")))
 ### With Vault Secrets
 
 **Before (pydantic-settings-vault):**
+
 ```python
 from pydantic import Field
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
@@ -590,6 +595,7 @@ config = AppConfig()
 ```
 
 **After (justconf):**
+
 ```python
 from typing import Annotated
 from pydantic import BaseModel
@@ -615,7 +621,7 @@ config = AppConfig(**process(config, [vault]))
 If you used `pydantic-settings-vault`, note these environment variable differences:
 
 | pydantic-settings-vault  | justconf                      | Notes                                             |
-|--------------------------|-------------------------------|---------------------------------------------------|
+| ------------------------ | ----------------------------- | ------------------------------------------------- |
 | `VAULT_AUTH_MOUNT_POINT` | `VAULT_APPROLE_MOUNT_PATH`    | Per-method variable for AppRole                   |
 | `VAULT_AUTH_MOUNT_POINT` | `VAULT_KUBERNETES_MOUNT_PATH` | Per-method variable for Kubernetes                |
 | `VAULT_AUTH_PATH`        | `VAULT_JWT_MOUNT_PATH`        | Per-method variable for JWT                       |
@@ -637,14 +643,34 @@ In practice this rarely matters, since typically only one method is configured.
 
 ### Key Differences
 
-| pydantic-settings                   | justconf                                                          |
-|-------------------------------------|-------------------------------------------------------------------|
-| `BaseSettings` class inheritance    | Plain `BaseModel` + loaders                                       |
-| Field-level vault config            | Placeholders in schema or any config source                       |
-| Implicit env loading                | Explicit `merge()` of sources                                     |
-| `VAULT_AUTH_MOUNT_POINT` (shared)   | Per-method mount path env vars (`VAULT_APPROLE_MOUNT_PATH`, etc.) |
+| pydantic-settings                 | justconf                                                          |
+| --------------------------------- | ----------------------------------------------------------------- |
+| `BaseSettings` class inheritance  | Plain `BaseModel` + loaders                                       |
+| Field-level vault config          | Placeholders in schema or any config source                       |
+| Implicit env loading              | Explicit `merge()` of sources                                     |
+| `VAULT_AUTH_MOUNT_POINT` (shared) | Per-method mount path env vars (`VAULT_APPROLE_MOUNT_PATH`, etc.) |
 
 ## Development
+
+### Prerequisites
+
+- [mise](https://mise.jdx.dev/getting-started.html#installing-mise-cli) for managing toolchains
+
+### Set up environment
+
+- install toolchains and deps
+
+  ```bash
+  mise trust && mise install
+  make deps
+  ```
+
+- create a local `.env.sh` for personal environment setup — secrets, tokens, tool
+  overrides, any shell you want (auto-sourced by mise):
+
+  ```bash
+  cp .env.sh.example .env.sh
+  ```
 
 ### Debugging with a real Vault server
 

@@ -8,6 +8,7 @@ _.source = { path = ".env.sh", tools = true }
 _.file = { path = ".env", tools = true }
 
 [tools]
+prettier = "3.8.3"
 python = "3.11"
 uv = "0.9.26"
 

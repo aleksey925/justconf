@@ -672,6 +672,12 @@ In practice this rarely matters, since typically only one method is configured.
   cp .env.sh.example .env.sh
   ```
 
+- verify the setup by running tests
+
+  ```bash
+  make test
+  ```
+
 ### Debugging with a real Vault server
 
 You can use a real Vault server to debug this project. To make this process
